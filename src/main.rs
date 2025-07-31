@@ -1,364 +1,98 @@
-use std::collections::HashSet;
-use std::env;
-use std::fmt::Debug;
-use std::fs;
-use std::iter::Peekable;
-use std::ptr::null;
-use std::str::Chars;
 
-#[derive(Debug, Clone)]
-enum Keyword {
-    Const,
-    Var,
-    If,
-    Else,
-    Fun,
-    While,
-    Print,
+use std::{iter::Peekable, slice::Iter};
+
+use tokenizer::Tokenizer;
+
+pub mod tokenizer;
+
+enum ASTType {
+    Program,
+    Function,
+    Class,
+    Scope,
+    ReturningScope,
+    VariableDecl,
+    Statement,
     Return,
-    For
+    ControlFlow,
+    ForExpression,
+    CompareEquality,
+    CompareRelationship,
+    AllCompare,
+    Expression,
+    Equality,
+    Comparison,
+    Term,
+    Factor,
+    Unary,
+    Primary,
+    Variable,
 }
 
-#[derive(Debug, Clone)]
-enum Lexeme {
-    Literal(String),
-    Keyword(Keyword),
-    Dot,
-    Semicolon,
-    SingleQuotes(char),
-    DoubleQuotes(String),
-    Minus,
-    Plus,
-    Star,
-    And,
-    Or,
-    Percent,
-    Dollar,
-    At,
-    Exclamation,
-    Caret,
-    Tilde,
-    Grave,
-    Pound,
-    OpenSquare,
-    CloseSquare,
-    OpenCurly,
-    CloseCurly,
-    OpenParen,
-    CloseParen,
-    Colon,
-    Left,
-    Right,
-    Comma,
-    Slash,
-    Question,
-    Assignment,
-    Equals,
-    Less,
-    Greater,
-    LessEquals,
-    GreaterEquals,
-    NotEquals,
-    Integer(String),
-    Decimal(String),
-    EOF
-}
-
-#[derive(Clone)]
-struct Token {
+struct ASTError {
     line: u64,
-    character_in_line: u64,
-    token_type: Lexeme,
+    char_in_line: u64,
+    message: String
 }
 
-impl Debug for Token {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(fmt, "TokenData({:?})", self.token_type)
+impl ASTError {
+    fn new(message: &str, token: tokenizer::Token) -> Self {
+        ASTError {
+            line: token.line,
+            char_in_line: token.character_in_line,
+            message: message.to_owned()
+        }
     }
 }
 
-struct Tokenizer<'a> {
-    tokens: Vec<Token>,
-    chars: Peekable<Chars<'a>>,
-    current_line: u64,
-    current_char: u64,
-    current_string: String,
+type ASTNodes = Vec<Box<ASTNode>>;
+
+struct ASTNode {
+    line: u64,
+    char_in_line: u64,
+    lexeme: tokenizer::Lexeme,
+    ast_type: ASTType,
+    children: ASTNodes,
 }
 
-impl<'a> Tokenizer<'a> {
-    fn new(content: &'a str) -> Self {
-        return Self {
-            tokens: Vec::new(),
-            chars: content.chars().peekable(),
-            current_line: 1,
-            current_char: 0,
-            current_string: String::new(),
-        };
-    }
-
-    fn token(&self, token: Lexeme) -> Token {
-        Token {
-            line: self.current_line,
-            character_in_line: self.current_char,
-            token_type: token,
+impl ASTNode {
+    fn new(ast_type: ASTType, token: tokenizer::Token) -> Self {
+        ASTNode {
+            line: token.line,
+            char_in_line: token.character_in_line,
+            lexeme: token.token_type,
+            ast_type: ast_type,
+            children: ASTNodes::new()
         }
     }
+}
 
-    fn consume_identifier(&mut self) {
-        while let Some(char) = self.chars.peek() {
-            match char {
-                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {
-                    self.current_string.push(*char);
-                }
-                _ => {
-                    let result = match &self.current_string[..] {
-                        "const" => Some(Keyword::Const),
-                        "var" => Some(Keyword::Var),
-                        "if" => Some(Keyword::If),
-                        "else" => Some(Keyword::Else),
-                        "fun" => Some(Keyword::Fun),
-                        "while" => Some(Keyword::While),
-                        "print" => Some(Keyword::Print),
-                        "return" => Some(Keyword::Return),
-                        "for" => Some(Keyword::For),
-                        _ => None,
-                    };
-                    match result {
-                        Some(key) => self.tokens.push(self.token(Lexeme::Keyword(key))),
-                        None => {
-                            self.tokens
-                                .push(self.token(Lexeme::Literal(self.current_string.clone())));
-                        }
-                    }
-                    self.current_string.clear();
-                    break;
-                }
-            }
-            self.chars.next();
+struct TokenIter<'a> {
+    iter: Peekable<Iter<'a, tokenizer::Token>>
+}
+
+impl<'a> TokenIter<'a> {
+    fn has_next(&mut self) -> bool {
+        self.iter.peek().is_some()
+    }
+}
+
+struct Parser {
+    tree: ASTNodes,
+}
+
+impl Parser {
+    fn program(iter: &mut TokenIter) -> Result<ASTNodes, ASTError> {
+        let nodes = ASTNodes::new();
+
+        while iter.has_next() {
+            
         }
+
+        Ok(nodes)
     }
 
-    fn tokenize(&mut self) {
-        while let Some(char) = self.chars.next() {
-            self.current_char += 1;
-            match char {
-                'a'..='z' | 'A'..='Z' | '_' => {
-                    self.current_string.push(char);
-                    self.consume_identifier();
-                }
-                '0'..='9' => {
-                    let mut number_type = false;
-                    self.current_string.push(char);
-                    while let Some(char) = self.chars.peek() {
-                        match char {
-                            '0'..='9' => {
-                                self.current_string.push(self.chars.next().unwrap());
-                            }
-                            '.' => {
-                                self.current_string.push(self.chars.next().unwrap());
-                                number_type = true;
-                            }
-                            _ => {
-                                if number_type {
-                                    self.tokens.push(
-                                        self.token(Lexeme::Decimal(self.current_string.clone())),
-                                    );
-                                } else {
-                                    self.tokens.push(
-                                        self.token(Lexeme::Integer(self.current_string.clone())),
-                                    );
-                                }
-                                self.current_string.clear();
-                                break;
-                            }
-                        }
-                    }
-                }
-                '.' => {
-                    self.current_string.push(char);
-
-                    if let Some(char) = self.chars.peek() {
-                        match char {
-                            '0'..='9' => {}
-                            _ => {
-                                self.current_string.clear();
-                                self.tokens.push(self.token(Lexeme::Dot));
-                                continue;
-                            }
-                        }
-                    }
-
-                    while let Some(char) = self.chars.peek() {
-                        match char {
-                            '0'..='9' => {
-                                self.current_string.push(self.chars.next().unwrap());
-                            }
-                            _ => {
-                                self.tokens
-                                    .push(self.token(Lexeme::Decimal(self.current_string.clone())));
-                                self.current_string.clear();
-                                break;
-                            }
-                        }
-                    }
-                }
-                '\'' => {
-                    let char = self.chars.next().expect(&format!(
-                        "Expected character inside single quotes at '{}:{}'",
-                        self.current_line, self.current_char
-                    ));
-                    self.tokens.push(self.token(Lexeme::SingleQuotes(char)));
-                    let char = self.chars.next();
-                    unsafe {
-                        if char.is_none() || char.unwrap_unchecked() != '\'' {
-                            panic!(
-                                "Expected ending quote for text '{:?}' at '{}:{}'",
-                                self.tokens.iter().nth_back(0).unwrap(),
-                                self.current_line,
-                                self.current_char
-                            );
-                        }
-                    }
-                }
-                '"' => {
-                    while let Some(char) = self.chars.peek() {
-                        match char {
-                            '"' => {
-                                self.chars.next();
-                                self.tokens.push(
-                                    self.token(Lexeme::DoubleQuotes(self.current_string.clone())),
-                                );
-                                self.current_string.clear();
-                                break;
-                            }
-                            _ => unsafe {
-                                self.current_string
-                                    .push(self.chars.next().unwrap_unchecked());
-                            },
-                        }
-                    }
-                }
-                '=' => {
-                    if let Some(next) = self.chars.peek() {
-                        if let Some(token) = match next {
-                            '=' => Some(Lexeme::Equals),
-                            '<' => Some(Lexeme::LessEquals),
-                            '>' => Some(Lexeme::GreaterEquals),
-                            '!' => Some(Lexeme::NotEquals),
-                            _ => None,
-                        } {
-                            self.tokens.push(self.token(token));
-                        } else {
-                            self.tokens.push(self.token(Lexeme::Assignment));
-                        }
-                    } else {
-                        self.tokens.push(self.token(Lexeme::Assignment));
-                    }
-                }
-                '<' => {
-                    if let Some(next) = self.chars.peek() {
-                        if let Some(token) = match next {
-                            '=' => Some(Lexeme::LessEquals),
-                            _ => None,
-                        } {
-                            self.tokens.push(self.token(token));
-                        } else {
-                            self.tokens.push(self.token(Lexeme::Less));
-                        }
-                    } else {
-                        self.tokens.push(self.token(Lexeme::Less));
-                    }
-                }
-                '>' => {
-                    if let Some(next) = self.chars.peek() {
-                        if let Some(token) = match next {
-                            '=' => Some(Lexeme::GreaterEquals),
-                            _ => None,
-                        } {
-                            self.tokens.push(self.token(token));
-                        } else {
-                            self.tokens.push(self.token(Lexeme::Greater));
-                        }
-                    } else {
-                        self.tokens.push(self.token(Lexeme::Greater));
-                    }
-                }
-                '!' => {
-                    if let Some(next) = self.chars.peek() {
-                        if let Some(token) = match next {
-                            '=' => Some(Lexeme::NotEquals),
-                            _ => None,
-                        } {
-                            self.tokens.push(self.token(token));
-                        } else {
-                            self.tokens.push(self.token(Lexeme::Exclamation));
-                        }
-                    } else {
-                        self.tokens.push(self.token(Lexeme::Exclamation));
-                    }
-                }
-                '/' => {
-                    if let Some(next) = self.chars.peek() {
-                        match (next) {
-                            '/' => {
-                                while let Some(char) = self.chars.peek() {
-                                    if *char == '\n' {
-                                        break;
-                                    }
-                                    self.chars.next();
-                                }
-                            }
-                            _ => {
-                                self.tokens.push(self.token(Lexeme::Slash));
-                            }
-                        }
-                    } else {
-                        self.tokens.push(self.token(Lexeme::Slash));
-                    }
-                }
-                ' ' | '\r' | '\t' => {}
-                '\n' => {
-                    self.current_char = 0;
-                    self.current_line += 1;
-                }
-                _ => {
-                    self.tokens.push(match char {
-                        ';' => self.token(Lexeme::Semicolon),
-                        '+' => self.token(Lexeme::Plus),
-                        '-' => self.token(Lexeme::Minus),
-                        '&' => self.token(Lexeme::And),
-                        '|' => self.token(Lexeme::Or),
-                        '^' => self.token(Lexeme::Caret),
-                        '$' => self.token(Lexeme::Dollar),
-                        '~' => self.token(Lexeme::Tilde),
-                        '@' => self.token(Lexeme::At),
-                        '#' => self.token(Lexeme::Pound),
-                        '%' => self.token(Lexeme::Percent),
-                        '*' => self.token(Lexeme::Star),
-                        '`' => self.token(Lexeme::Grave),
-                        '[' => self.token(Lexeme::OpenSquare),
-                        ']' => self.token(Lexeme::CloseSquare),
-                        '{' => self.token(Lexeme::OpenCurly),
-                        '}' => self.token(Lexeme::CloseCurly),
-                        '(' => self.token(Lexeme::OpenParen),
-                        ')' => self.token(Lexeme::CloseParen),
-                        '<' => self.token(Lexeme::Left),
-                        '>' => self.token(Lexeme::Right),
-                        '?' => self.token(Lexeme::Question),
-                        ',' => self.token(Lexeme::Comma),
-                        ':' => self.token(Lexeme::Colon),
-                        _ => {
-                            panic!(
-                                "Unidentified character type '{char}' at '{}:{}'",
-                                self.current_line, self.current_char
-                            );
-                        }
-                    });
-                }
-            }
-        }
-        self.tokens.push(self.token(Lexeme::EOF));
-    }
+    fn parse(&mut self, iter: &mut TokenIter) {}
 }
 
 fn main() {
