@@ -5,14 +5,155 @@ use tokenizer::Tokenizer;
 
 pub mod tokenizer;
 
+enum CompareEquality {
+    Equals,
+    NotEquals
+}
+
+enum CompareRelationship {
+    Greater,
+    GreaterEquals,
+    Less,
+    LessEquals
+}
+
+enum AllCompare {
+    CompareEquality(CompareEquality),
+    CompareRelationship(CompareRelationship)
+}
+
+enum ASTBlock {
+    Program(Box<Class>),
+    Function(Box<Function>)
+}
+
+struct Program {
+    children: Vec<ASTBlock>
+}
+
+struct Function {
+    identifier : String,
+    scopes: Box<Scope>
+}
+
+enum ASTClass {
+    VariableDecl(Box<VariableDecl>),
+    Function(Box<Function>)
+}
+
+struct Class {
+    identifier : String,
+    children: Vec<ASTClass>
+}
+
+enum ASTScope {
+    Statement(Box<Statement>),
+    Scope(Box<Scope>)
+}
+
+struct Scope {
+    children : Vec<ASTScope>
+}
+
+struct VariableDecl {
+    identifier: String,
+    assigning_expression: Option<Box<Scope>>
+}
+
+struct Statement {
+
+}
+
+struct Return {
+    value : Variable
+}
+
+enum ASTControlFlowIfCondition {
+    Expression(Box<Expression>),
+    VariableDecl(Box<VariableDecl>),
+    VariableDeclCompare(Box<VariableDecl>, AllCompare, Box<Expression>)
+}
+
+struct ControlFlowIf {
+    condition: ASTControlFlowIfCondition,
+    if_true: Box<Scope>,
+    if_false: Option<Box<Scope>>
+}
+
+struct ControlFlowWhile {
+    condition: ASTControlFlowIfCondition,
+    scope: Box<Scope>
+}
+
+struct ControlFlowFor {
+    expression: Box<ForExpression>,
+    scope: Box<Scope>
+}
+
+enum ASTControlFlow {
+
+}
+
+struct ControlFlow {
+
+}
+
+enum ASTForExpression {
+    VariableDecl(Box<VariableDecl>),
+    None
+}
+
+struct ForExpression {
+    init: ASTForExpression,
+    compare_expression: Box<Expression>,
+    increment_expression: Box<Expression>
+}
+
+struct Expression {
+
+}
+
+struct Equality {
+
+}
+
+struct Comparison {
+
+}
+
+struct Term {
+
+}
+
+struct Factor {
+
+}
+
+struct Unary {
+
+}
+
+struct Primary {
+
+}
+
+enum ASTVariable {
+    Variable(Box<Variable>, Box<Variable>),
+    Identifier(String)
+}
+
+struct Variable {
+    variable: ASTVariable
+}
+
 enum ASTType {
-    Program,
-    Function,
-    Class,
-    Scope,
-    ReturningScope,
-    VariableDecl,
-    Statement,
+    Program(Block),
+    Function(Block),
+    Class(Block),
+    Scope(Block),
+    ReturningScope(Block),
+    VariableDecl(VariableDecl),
+    Statement(Box<ASTNode>),
     Return,
     ControlFlow,
     ForExpression,
@@ -45,14 +186,12 @@ impl ASTError {
     }
 }
 
-type ASTNodes = Vec<Box<ASTNode>>;
+type ChildNodes = Vec<Box<ASTNode>>;
 
 struct ASTNode {
     line: u64,
     char_in_line: u64,
-    lexeme: tokenizer::Lexeme,
     ast_type: ASTType,
-    children: ASTNodes,
 }
 
 impl ASTNode {
@@ -60,9 +199,7 @@ impl ASTNode {
         ASTNode {
             line: token.line,
             char_in_line: token.character_in_line,
-            lexeme: token.token_type,
-            ast_type: ast_type,
-            children: ASTNodes::new()
+            ast_type: ast_type
         }
     }
 }
@@ -74,6 +211,12 @@ struct TokenIter<'a> {
 trait ToTokenIter<'a> {
     type IterResult;
     fn to_token_iter(&'a mut self) -> Self::IterResult;
+}
+
+impl<'a> From<&'a mut Vec<tokenizer::Token>> for TokenIter<'a>{
+    fn from(value: &'a mut Vec<tokenizer::Token>) -> Self {
+        TokenIter::new(value)
+    }
 }
 
 impl<'a> ToTokenIter<'a> for Vec<tokenizer::Token> {
@@ -96,28 +239,23 @@ impl<'a> TokenIter<'a> {
 }
 
 struct Parser {
-    tree: ASTNodes,
+    tree: ChildNodes,
 }
 
 impl Parser {
-    fn parse_function(iter: &mut TokenIter) -> Result<ASTNodes, ASTError> {
+    fn parse_function(iter: &mut TokenIter) -> Result<ChildNodes, ASTError> {
 
     }
 
-    fn parse_class(iter: &mut TokenIter) -> Result<ASTNodes, ASTError> {
-
+    fn parse_class(iter: &mut TokenIter) -> Result<ChildNodes, ASTError> {
+        
     }
 
-    fn parse_program(iter: &mut TokenIter) -> Result<ASTNodes, ASTError> {
-        let nodes = ASTNodes::new();
+    fn parse_program(iter: &mut TokenIter) -> Result<ChildNodes, ASTError> {
+        let mut nodes = ChildNodes::new();
 
         while iter.has_next() {
-            let mut results = Parser::parse_function(iter);
-            match results {
-                Ok(result) => nodes.append(results),
-                Err(e) => return Err(e)
-            }
-            
+            nodes.append(&mut Parser::parse_function(iter)?);
         }
 
         Ok(nodes)
@@ -138,7 +276,7 @@ impl Parser {
 
     fn new() -> Self {
         Parser {
-            tree: ASTNodes::new()
+            tree: ChildNodes::new()
         }
     }
 }

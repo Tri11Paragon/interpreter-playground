@@ -21,7 +21,7 @@ pub enum Keyword {
 
 #[derive(Debug, Clone)]
 pub enum Lexeme {
-    Literal(String),
+    Identifier(String),
     Keyword(Keyword),
     Dot,
     Semicolon,
@@ -135,7 +135,7 @@ impl<'a> Tokenizer<'a> {
                         Some(key) => self.tokens.push(self.token(Lexeme::Keyword(key))),
                         None => {
                             self.tokens
-                                .push(self.token(Lexeme::Literal(self.current_string.clone())));
+                                .push(self.token(Lexeme::Identifier(self.current_string.clone())));
                         }
                     }
                     self.current_string.clear();

@@ -6,9 +6,7 @@ class -> 'class' IDENTIFIER '{' (variable_decl | function)* '}'
 
 scope -> '{' (scope | statement)* '}' 
 
-returning_scope = '{' (scope | statement)* (return ';') '}'
-
-variable_decl -> ('const' | 'var') IDENTIFIER (';' | '=' (expression | returning_scope))
+variable_decl -> ('const' | 'var') IDENTIFIER (';' | '=' (expression | scope))
 
 statement -> (variable_decl | control_flow | return) ';'
 
@@ -18,7 +16,9 @@ control_flow -> "if" (expression | variable_decl | '(' variable_decl ')' all_com
                 "while" (expression | variable_decl | '(' variable_decl ')' all_compare expression) scope | 
                 "for" for_expression scope
 
-for_expression -> (variable_decl | EMPTY) ';' expression ';' () 
+for_expression -> (variable_decl | EMPTY) ';' expression ';' 
+
+for_increment -> (expression | (expression ',' for_increment)+)
 
 compare_equality -> ( "!=" | "==" )
 compare_relationship ->( ">" | ">=" | "<" | "<=" )
