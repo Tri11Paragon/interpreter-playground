@@ -1,179 +1,197 @@
-
 use std::{iter::Peekable, slice::Iter};
 
 use tokenizer::Tokenizer;
 
 pub mod tokenizer;
 
-enum CompareEquality {
+#[derive(Debug, Clone)]
+enum CompareOps {
     Equals,
-    NotEquals
-}
-
-enum CompareRelationship {
+    NotEquals,
     Greater,
     GreaterEquals,
     Less,
-    LessEquals
+    LessEquals,
 }
 
-enum AllCompare {
-    CompareEquality(CompareEquality),
-    CompareRelationship(CompareRelationship)
-}
-
-enum ASTBlock {
+#[derive(Debug, Clone)]
+enum ProgramImpl {
     Program(Box<Class>),
-    Function(Box<Function>)
+    Function(Box<Function>),
 }
 
+#[derive(Default, Debug, Clone)]
 struct Program {
-    children: Vec<ASTBlock>
+    children: Vec<ProgramImpl>,
 }
 
+#[derive(Default, Debug, Clone)]
 struct Function {
-    identifier : String,
-    scopes: Box<Scope>
+    identifier: String,
+    scopes: Box<Scope>,
 }
 
-enum ASTClass {
+#[derive(Debug, Clone)]
+enum ClassInternals {
     VariableDecl(Box<VariableDecl>),
-    Function(Box<Function>)
+    Function(Box<Function>),
 }
 
+#[derive(Default, Debug, Clone)]
 struct Class {
-    identifier : String,
-    children: Vec<ASTClass>
+    identifier: String,
+    children: Vec<ClassInternals>,
 }
 
-enum ASTScope {
+#[derive(Debug, Clone)]
+enum ScopeImpl {
     Statement(Box<Statement>),
-    Scope(Box<Scope>)
+    Scope(Box<Scope>),
 }
 
+#[derive(Default, Debug, Clone)]
 struct Scope {
-    children : Vec<ASTScope>
+    children: Vec<ScopeImpl>,
 }
 
+#[derive(Debug, Clone)]
+enum ValueExpression {
+    Expression(Box<Expression>),
+    Scope(Box<Scope>),
+}
+
+#[derive(Debug, Clone)]
+enum ArrayDecl {
+    Sized(u64),
+    Initialized(Vec<ValueExpression>),
+}
+
+#[derive(Debug, Clone)]
+enum VariableAssignmentExpression {
+    ArrayDecl(Box<ArrayDecl>),
+    Expression(Box<Expression>),
+    Scope(Box<Scope>),
+}
+
+#[derive(Default, Debug, Clone)]
 struct VariableDecl {
     identifier: String,
-    assigning_expression: Option<Box<Scope>>
+    assigning_expression: Option<VariableAssignmentExpression>,
 }
 
-struct Statement {
-
+#[derive(Debug, Clone)]
+enum AssignmentImpl {
+    Expression(Box<Expression>),
+    Scope(Box<Scope>),
 }
 
-struct Return {
-    value : Variable
+#[derive(Debug, Clone)]
+enum Statement {
+    Return(Box<Variable>),
+    VariableDecl(Box<VariableDecl>),
+    ControlFlow(Box<ControlFlow>),
+    Assignment(Variable, AssignmentImpl),
 }
 
-enum ASTControlFlowIfCondition {
+#[derive(Debug, Clone)]
+enum ControlFlowConditionImpl {
     Expression(Box<Expression>),
     VariableDecl(Box<VariableDecl>),
-    VariableDeclCompare(Box<VariableDecl>, AllCompare, Box<Expression>)
+    VariableDeclCompare(Box<VariableDecl>, CompareOps, Box<Expression>),
 }
 
+#[derive(Debug, Clone)]
+enum ControlFlow {
+    If(Box<ControlFlowIf>),
+    While(Box<ControlFlowWhile>),
+    For(Box<ControlFlowFor>),
+}
+
+#[derive(Debug, Clone)]
 struct ControlFlowIf {
-    condition: ASTControlFlowIfCondition,
+    condition: ControlFlowConditionImpl,
     if_true: Box<Scope>,
-    if_false: Option<Box<Scope>>
+    if_false: Option<Box<Scope>>,
 }
 
+#[derive(Debug, Clone)]
 struct ControlFlowWhile {
-    condition: ASTControlFlowIfCondition,
-    scope: Box<Scope>
+    condition: ControlFlowConditionImpl,
+    scope: Box<Scope>,
 }
 
+#[derive(Debug, Clone)]
 struct ControlFlowFor {
     expression: Box<ForExpression>,
-    scope: Box<Scope>
+    scope: Box<Scope>,
 }
 
-enum ASTControlFlow {
-
-}
-
-struct ControlFlow {
-
-}
-
-enum ASTForExpression {
+#[derive(Debug, Clone)]
+enum ForInitImpl {
     VariableDecl(Box<VariableDecl>),
-    None
+    ForInit(Box<VariableDecl>, Box<ForInitImpl>),
 }
 
+#[derive(Debug, Clone)]
+enum ForIncrementImpl {
+    Expression(Box<Expression>),
+    ForIncrement(Box<Expression>, Box<ForIncrementImpl>),
+}
+
+#[derive(Debug, Clone)]
 struct ForExpression {
-    init: ASTForExpression,
+    init: Option<ForInitImpl>,
     compare_expression: Box<Expression>,
-    increment_expression: Box<Expression>
+    increment_expression: Option<ForIncrementImpl>,
 }
 
-struct Expression {
-
+#[derive(Debug, Clone)]
+enum BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    AddEquals,
+    SubEquals,
+    MulEquals,
+    DivEquals,
 }
 
-struct Equality {
-
+#[derive(Debug, Clone)]
+enum Expression {
+    Primary(Box<Primary>),
+    Unary(UnaryOp, Box<Expression>),
+    Comparison(Box<Expression>, CompareOps, Box<Expression>),
+    BinaryOp(Box<Expression>, BinaryOp, Box<Expression>),
 }
 
-struct Comparison {
-
+#[derive(Debug, Clone)]
+enum UnaryOp {
+    Not,
+    Negate,
 }
 
-struct Term {
-
+#[derive(Debug, Clone)]
+enum Primary {
+    Variable(Box<Variable>),
+    True,
+    False,
+    Nil,
+    Expression(Box<Expression>),
+    Number(String),
+    String(String),
 }
 
-struct Factor {
-
-}
-
-struct Unary {
-
-}
-
-struct Primary {
-
-}
-
-enum ASTVariable {
+#[derive(Debug, Clone)]
+enum Variable {
     Variable(Box<Variable>, Box<Variable>),
-    Identifier(String)
-}
-
-struct Variable {
-    variable: ASTVariable
-}
-
-enum ASTType {
-    Program(Block),
-    Function(Block),
-    Class(Block),
-    Scope(Block),
-    ReturningScope(Block),
-    VariableDecl(VariableDecl),
-    Statement(Box<ASTNode>),
-    Return,
-    ControlFlow,
-    ForExpression,
-    CompareEquality,
-    CompareRelationship,
-    AllCompare,
-    Expression,
-    Equality,
-    Comparison,
-    Term,
-    Factor,
-    Unary,
-    Primary,
-    Variable,
+    Identifier(String),
 }
 
 struct ASTError {
     line: u64,
     char_in_line: u64,
-    message: String
+    message: String,
 }
 
 impl ASTError {
@@ -181,31 +199,13 @@ impl ASTError {
         ASTError {
             line: token.line,
             char_in_line: token.character_in_line,
-            message: message.to_owned()
-        }
-    }
-}
-
-type ChildNodes = Vec<Box<ASTNode>>;
-
-struct ASTNode {
-    line: u64,
-    char_in_line: u64,
-    ast_type: ASTType,
-}
-
-impl ASTNode {
-    fn new(ast_type: ASTType, token: tokenizer::Token) -> Self {
-        ASTNode {
-            line: token.line,
-            char_in_line: token.character_in_line,
-            ast_type: ast_type
+            message: message.to_owned(),
         }
     }
 }
 
 struct TokenIter<'a> {
-    iter: Peekable<Iter<'a, tokenizer::Token>>
+    iter: Peekable<Iter<'a, tokenizer::Token>>,
 }
 
 trait ToTokenIter<'a> {
@@ -213,7 +213,7 @@ trait ToTokenIter<'a> {
     fn to_token_iter(&'a mut self) -> Self::IterResult;
 }
 
-impl<'a> From<&'a mut Vec<tokenizer::Token>> for TokenIter<'a>{
+impl<'a> From<&'a mut Vec<tokenizer::Token>> for TokenIter<'a> {
     fn from(value: &'a mut Vec<tokenizer::Token>) -> Self {
         TokenIter::new(value)
     }
@@ -229,7 +229,7 @@ impl<'a> ToTokenIter<'a> for Vec<tokenizer::Token> {
 impl<'a> TokenIter<'a> {
     fn new(vec: &'a mut Vec<tokenizer::Token>) -> Self {
         TokenIter {
-            iter: vec.iter().peekable()
+            iter: vec.iter().peekable(),
         }
     }
 
@@ -238,46 +238,30 @@ impl<'a> TokenIter<'a> {
     }
 }
 
-struct Parser {
-    tree: ChildNodes,
+struct Parser;
+
+struct ParsedTree {
+    nodes: Program,
 }
 
 impl Parser {
-    fn parse_function(iter: &mut TokenIter) -> Result<ChildNodes, ASTError> {
+    fn parse_function(iter: &mut TokenIter) -> Result<ProgramImpl, ASTError> {}
 
-    }
+    fn parse_class(iter: &mut TokenIter) -> Result<ProgramImpl, ASTError> {}
 
-    fn parse_class(iter: &mut TokenIter) -> Result<ChildNodes, ASTError> {
-        
-    }
-
-    fn parse_program(iter: &mut TokenIter) -> Result<ChildNodes, ASTError> {
-        let mut nodes = ChildNodes::new();
+    fn parse_program(iter: &mut TokenIter) -> Result<Program, ASTError> {
+        let mut nodes = Program::default();
 
         while iter.has_next() {
-            nodes.append(&mut Parser::parse_function(iter)?);
+            nodes.children.push(Parser::parse_function(iter)?);
+            nodes.children.push(Parser::parse_class(iter)?);
         }
 
         Ok(nodes)
     }
 
-    fn parse(&mut self, mut iter: TokenIter) {
-        let mut results = Parser::parse_program(&mut iter);
-        match &mut results {
-            Ok(result) => {
-                self.tree.append(result);
-            }
-            Err(e) => {
-                println!("Parser Error: {}", e.message);
-            }
-        }
-        
-    }
-
-    fn new() -> Self {
-        Parser {
-            tree: ChildNodes::new()
-        }
+    fn parse(mut iter: TokenIter) -> Result<ParsedTree, ASTError> {
+        Ok(ParsedTree{nodes: Parser::parse_program(&mut iter)?})
     }
 }
 
