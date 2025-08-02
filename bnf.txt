@@ -1,6 +1,6 @@
 program -> (function | class)*
 
-function -> 'fun' IDENTIFIER scope+ 
+function -> 'fun' IDENTIFIER scope 
 
 class -> 'class' IDENTIFIER '{' (variable_decl | function)* '}'
 

@@ -1,5 +1,8 @@
-use std::{iter::Peekable, slice::Iter};
+use std::fmt::Display;
+use std::{iter::Peekable, marker::PhantomData, slice::Iter};
 
+use tokenizer::Keyword;
+use tokenizer::Lexeme;
 use tokenizer::Tokenizer;
 
 pub mod tokenizer;
@@ -16,7 +19,7 @@ enum CompareOps {
 
 #[derive(Debug, Clone)]
 enum ProgramImpl {
-    Program(Box<Class>),
+    Class(Box<Class>),
     Function(Box<Function>),
 }
 
@@ -28,7 +31,7 @@ struct Program {
 #[derive(Default, Debug, Clone)]
 struct Function {
     identifier: String,
-    scopes: Box<Scope>,
+    scope: Box<Scope>,
 }
 
 #[derive(Debug, Clone)]
@@ -194,12 +197,29 @@ struct ASTError {
     message: String,
 }
 
+impl Display for ASTError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!(
+            "Parser error occurred at {}:{}. Diagnostic returned {}",
+            self.line, self.char_in_line, &self.message
+        ))
+    }
+}
+
 impl ASTError {
-    fn new(message: &str, token: tokenizer::Token) -> Self {
+    fn new(message: &str, token: &tokenizer::Token) -> Self {
         ASTError {
             line: token.line,
             char_in_line: token.character_in_line,
             message: message.to_owned(),
+        }
+    }
+
+    fn eof() -> Self {
+        ASTError{
+            line: 0,
+            char_in_line: 0,
+            message: String::from("You have hit the end of the file. Good luck with that. Please write better code n00b")
         }
     }
 }
@@ -207,6 +227,161 @@ impl ASTError {
 struct TokenIter<'a> {
     iter: Peekable<Iter<'a, tokenizer::Token>>,
 }
+
+impl<'a> TokenIter<'a> {
+    fn new(vec: &'a mut Vec<tokenizer::Token>) -> Self {
+        TokenIter {
+            iter: vec.iter().peekable(),
+        }
+    }
+
+    fn has_next(&mut self) -> bool {
+        self.iter.peek().is_some()
+    }
+
+    fn consume_if(&mut self, consume: Lexeme) -> bool {
+        if matches!(self.iter.peek(), Some(x) if x.token_type == consume) {
+            self.iter.next();
+            return true;
+        }
+        false
+    }
+
+    fn loop_consume_if(&mut self, consume: Lexeme) -> Result<bool, ASTError> {
+        if let Some(value) = self.iter.peek() {
+            if value.token_type == consume {
+                self.iter.next();
+                return Ok(true);
+            } else {
+                return Ok(false);
+            }
+        } else {
+            return Err(ASTError::eof());
+        }
+    }
+
+    fn identifier(&mut self) -> Result<String, ASTError> {
+        match self.iter.next() {
+            Some(value) => match &value.token_type {
+                Lexeme::Identifier(name) => Ok(name.clone()),
+                _ => Err(ASTError::new(
+                    &format!("Syntax Error. Expected Identifier but found {:?}", value),
+                    value,
+                )),
+            },
+            None => Err(ASTError::eof()),
+        }
+    }
+
+    fn requires(&mut self, token: Lexeme) -> Result<(), ASTError> {
+        match self.iter.next() {
+            Some(value) => {
+                if value.token_type == token {
+                    Ok(())
+                } else {
+                    Err(ASTError::new(
+                        &format!("Syntax Error. Expected {:?} but found {:?}", token, value),
+                        value,
+                    ))
+                }
+            }
+            None => Err(ASTError::eof()),
+        }
+    }
+}
+
+struct Parser;
+
+struct ParsedTree {
+    nodes: Program,
+}
+
+impl Parser {
+    fn variable_decl(iter: &mut TokenIter) -> Result<Scope, ASTError> {
+        todo!()
+    }
+
+    fn parse_scope(iter: &mut TokenIter) -> Result<Scope, ASTError> {
+        todo!()
+    }
+
+    fn parse_function(iter: &mut TokenIter) -> Result<Option<ProgramImpl>, ASTError> {
+        if iter.consume_if(Lexeme::Keyword(Keyword::Fun)) {
+            let mut func = Function::default();
+            func.identifier = iter.identifier()?;
+            iter.requires(Lexeme::OpenCurly)?;
+
+            func.scope = Parser::parse_scope(iter)?.into();
+
+            iter.requires(Lexeme::CloseCurly)?;
+            return Ok(Some(ProgramImpl::Function(func.into())));
+        }
+        Ok(None)
+    }
+
+    fn parse_class(iter: &mut TokenIter) -> Result<Option<ProgramImpl>, ASTError> {
+        if iter.consume_if(Lexeme::Keyword(Keyword::Class)) {
+            let mut class = Class::default();
+            class.identifier = iter.identifier()?;
+            iter.requires(Lexeme::OpenCurly);
+
+            while !iter.loop_consume_if(Lexeme::CloseCurly)? {
+                
+            }
+
+            return Ok(Some(ProgramImpl::Class(class.into())));
+        }
+        Ok(None)
+    }
+
+    fn parse_program(iter: &mut TokenIter) -> Result<Program, ASTError> {
+        let mut nodes = Program::default();
+
+        while iter.has_next() {
+            Parser::parse_function(iter)?.map(|v| nodes.children.push(v));
+            Parser::parse_class(iter)?.map(|v| nodes.children.push(v));
+        }
+
+        Ok(nodes)
+    }
+
+    fn parse(mut iter: TokenIter) -> Result<ParsedTree, ASTError> {
+        Ok(ParsedTree {
+            nodes: Parser::parse_program(&mut iter)?,
+        })
+    }
+}
+
+fn main() {
+    let mut tokenizer = Tokenizer::new("var silly = 32;");
+
+    tokenizer.tokenize();
+
+    let mut parsed_tree = Parser::parse(tokenizer.tokens.to_token_iter());
+
+    println!("{:?}", &mut tokenizer.tokens);
+    println!();
+    println!(
+        "{:?}",
+        &mut parsed_tree.expect("Some kind of error happened lol").nodes
+    );
+}
+
+// fn main() {
+//     let args: Vec<String> = env::args().collect();
+
+//     if args.len() <= 1 {
+//         println!("Usage: program file_path");
+//         std::process::exit(64)
+//     }
+
+//     let file_path = &args[1];
+
+//     let contents =
+//         fs::read_to_string(&file_path).expect(&format!("Unable to read file {}!", file_path));
+
+//     let tokens = extract_tokens(&contents);
+// }
 
 trait ToTokenIter<'a> {
     type IterResult;
@@ -225,69 +400,3 @@ impl<'a> ToTokenIter<'a> for Vec<tokenizer::Token> {
         TokenIter::new(self)
     }
 }
-
-impl<'a> TokenIter<'a> {
-    fn new(vec: &'a mut Vec<tokenizer::Token>) -> Self {
-        TokenIter {
-            iter: vec.iter().peekable(),
-        }
-    }
-
-    fn has_next(&mut self) -> bool {
-        self.iter.peek().is_some()
-    }
-}
-
-struct Parser;
-
-struct ParsedTree {
-    nodes: Program,
-}
-
-impl Parser {
-    fn parse_function(iter: &mut TokenIter) -> Result<ProgramImpl, ASTError> {}
-
-    fn parse_class(iter: &mut TokenIter) -> Result<ProgramImpl, ASTError> {}
-
-    fn parse_program(iter: &mut TokenIter) -> Result<Program, ASTError> {
-        let mut nodes = Program::default();
-
-        while iter.has_next() {
-            nodes.children.push(Parser::parse_function(iter)?);
-            nodes.children.push(Parser::parse_class(iter)?);
-        }
-
-        Ok(nodes)
-    }
-
-    fn parse(mut iter: TokenIter) -> Result<ParsedTree, ASTError> {
-        Ok(ParsedTree{nodes: Parser::parse_program(&mut iter)?})
-    }
-}
-
-fn main() {
-    let mut tokenizer = Tokenizer::new("var silly = 32;");
-
-    tokenizer.tokenize();
-
-    let mut parser = Parser::new();
-    parser.parse(tokenizer.tokens.to_token_iter());
-
-    println!("{:?}", &mut tokenizer.tokens);
-}
-
-// fn main() {
-//     let args: Vec<String> = env::args().collect();
-
-//     if args.len() <= 1 {
-//         println!("Usage: program file_path");
-//         std::process::exit(64)
-//     }
-
-//     let file_path = &args[1];
-
-//     let contents =
-//         fs::read_to_string(&file_path).expect(&format!("Unable to read file {}!", file_path));
-
-//     let tokens = extract_tokens(&contents);
-// }

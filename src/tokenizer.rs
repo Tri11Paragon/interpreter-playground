@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::iter::Peekable;
 use std::str::Chars;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Keyword {
     Const,
     Var,
@@ -19,7 +19,7 @@ pub enum Keyword {
     False
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Lexeme {
     Identifier(String),
     Keyword(Keyword),
