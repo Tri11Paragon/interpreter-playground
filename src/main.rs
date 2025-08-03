@@ -1,6 +1,7 @@
 use std::fmt::Display;
 use std::{iter::Peekable, marker::PhantomData, slice::Iter};
 
+use crate::Primary::Expression;
 use tokenizer::Keyword;
 use tokenizer::Lexeme;
 use tokenizer::Tokenizer;
@@ -8,19 +9,19 @@ use tokenizer::Tokenizer;
 pub mod tokenizer;
 
 macro_rules! syntax_error {
-    ($found:expr $(,)?) => {
+    ($found:expr $(,)?) => {{
         Err(ASTError::new(
             &format!("Syntax Error. Unexpected token {:?}", $found.token_type),
             $found,
         ))
-    };
-    ($found:expr, $expected:literal $(,)?) => {
+    }};
+    ($found:expr, $expected:literal $(,)?) => {{
         Err(ASTError::new(
             &format!("Syntax Error. Unexpected token {:?}, {}", $found.token_type, $expected),
             $found
         ))
-    };
-    ($found:expr, $expected:expr $(,)?) => {
+    }};
+    ($found:expr, $expected:expr $(,)?) => {{
         Err(ASTError::new(
             &format!(
                 "Syntax Error. Unexpected token {:?}, expected {:?}",
@@ -29,7 +30,7 @@ macro_rules! syntax_error {
             ),
             &$found,
         ))
-    };
+    }};
     ($found:expr, $first:expr, $($expected:expr),+ $(,)?) => {{
         // Collect all `expected` items (including `$first`) into a vec
         let expected_list = {
@@ -39,14 +40,14 @@ macro_rules! syntax_error {
             v.join(", ")
         };
 
-        return Err(ASTError::new(
+        Err(ASTError::new(
             &format!(
                 "Syntax Error. Unexpected token {:?}, expected one of: {}",
                 $found.token_type,
                 expected_list,
             ),
             &$found,
-        ));
+        ))
     }};
 }
 
@@ -108,21 +109,21 @@ enum ValueExpression {
 }
 
 #[derive(Debug, Clone)]
+enum VariableAssignmentExpression {
+    ArrayDecl(Box<ArrayDecl>),
+    Expression(Box<Expression>),
+    Scope(Box<Scope>),
+}
+
+#[derive(Debug, Clone)]
 enum ArrayDecl {
     Sized(u64),
     Initialized(ArrayLiteral),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 struct ArrayLiteral {
     values: Vec<ValueExpression>,
-}
-
-#[derive(Debug, Clone)]
-enum VariableAssignmentExpression {
-    ArrayDecl(Box<ArrayDecl>),
-    Expression(Box<Expression>),
-    Scope(Box<Scope>),
 }
 
 #[derive(Default, Debug, Clone)]
@@ -299,7 +300,7 @@ impl<'a> TokenIter<'a> {
         }
     }
 
-    fn forward(&mut self, amount: usize) -> Result<&tokenizer::Token, ASTError> {
+    fn forward(&self, amount: usize) -> Result<&tokenizer::Token, ASTError> {
         match self.iter.clone().skip(amount).next() {
             Some(val) => Ok(val),
             None => Err(ASTError::eof()),
@@ -384,33 +385,70 @@ struct ParsedTree {
 impl Parser {
     fn parse_assignment(iter: &mut TokenIter) -> Result<VariableAssignmentExpression, ASTError> {
         match iter.peek()?.token_type {
-            Lexeme::Identifier(_) => Ok(VariableAssignmentExpression::Expression(
-                Parser::parse_expression(iter)?.into(),
-            )),
             Lexeme::OpenSquare => {
                 iter.next()?;
-                if let Lexeme::Integer(value) = &iter.peek()?.token_type {
+                if let Lexeme::Integer(value) = &iter.peek()?.token_type.clone() {
                     if iter.forward(1)?.token_type == Lexeme::CloseSquare {
                         return Ok(VariableAssignmentExpression::ArrayDecl(
-                            ArrayDecl::Sized(value.parse().map_err(|v| {
+                            ArrayDecl::Sized(value.parse().map_err(|_| {
                                 ASTError::new("Failed to parse integer", iter.peek().unwrap())
                             })?)
                             .into(),
                         ));
                     }
                 }
+                let mut arr = ArrayLiteral::default();
                 while iter.peek()?.token_type != Lexeme::CloseSquare {
-                    todo!()
+                    arr.values.push(Parser::parse_value_expression(iter)?);
+                    if iter.peek()?.token_type == Lexeme::Comma {
+                        iter.next()?;
+                    } else if iter.peek()?.token_type != Lexeme::CloseSquare {
+                        return syntax_error!(&iter.peek()?, Lexeme::Comma, Lexeme::CloseSquare);
+                    }
                 }
+                Ok(VariableAssignmentExpression::ArrayDecl(
+                    ArrayDecl::Initialized(arr).into(),
+                ))
             }
-            Lexeme::OpenCurly => {
-                todo!()
-            }
-            _ => syntax_error!(iter.peek()?),
+            Lexeme::OpenCurly => Ok(VariableAssignmentExpression::Scope(
+                Parser::parse_scope(iter)?.into(),
+            )),
+            _ => Ok(VariableAssignmentExpression::Expression(
+                Parser::parse_expression(iter)?.into(),
+            )),
         }
     }
     fn parse_variable_decl(iter: &mut TokenIter) -> Result<VariableDecl, ASTError> {
-        todo!()
+        let is_const = iter.next()?.token_type == Lexeme::Keyword(Keyword::Const);
+        match iter.peek()?.token_type.clone() {
+            Lexeme::Identifier(name) => {
+                iter.next()?;
+                if iter.peek()?.token_type == Lexeme::Semicolon {
+                    return Ok(VariableDecl {
+                        is_const,
+                        identifier: name,
+                        assigning_expression: None,
+                    });
+                }
+                Ok(VariableDecl {
+                    is_const,
+                    identifier: name,
+                    assigning_expression: Self::parse_assignment(iter)?.into(),
+                })
+            }
+            _ => {
+                syntax_error!(&iter.peek()?, Lexeme::Identifier(String::from("?")))
+            }
+        }
+    }
+
+    fn parse_value_expression(iter: &mut TokenIter) -> Result<ValueExpression, ASTError> {
+        match iter.peek()?.token_type {
+            Lexeme::OpenCurly => Ok(ValueExpression::Scope(Parser::parse_scope(iter)?.into())),
+            _ => Ok(ValueExpression::Expression(
+                Parser::parse_expression(iter)?.into(),
+            )),
+        }
     }
 
     fn parse_variable(iter: &mut TokenIter) -> Result<Variable, ASTError> {
@@ -432,7 +470,37 @@ impl Parser {
     }
 
     fn parse_expression(iter: &mut TokenIter) -> Result<Expression, ASTError> {
-        todo!()
+        match iter.peek()?.token_type.clone() {
+            Lexeme::OpenParen => {
+                iter.next()?;
+                let expr = Parser::parse_expression(iter)?;
+                iter.requires(Lexeme::CloseParen)?;
+                Ok(Expression::Primary(Primary::Expression(expr.into()).into()))
+            }
+            Lexeme::Decimal(Val) | Lexeme::Integer(Val) => {
+                Ok(Expression::Primary(Primary::Number(Val).into()))
+            }
+            Lexeme::Keyword(keyword) => Ok(Expression::Primary(
+                match keyword {
+                    Keyword::True => Primary::True,
+                    Keyword::False => Primary::False,
+                    Keyword::Nil => Primary::Nil,
+                    _ => {
+                        return syntax_error!(
+                            &iter.peek()?,
+                            Lexeme::Keyword(Keyword::True),
+                            Lexeme::Keyword(Keyword::False),
+                            Lexeme::Keyword(Keyword::Nil)
+                        )
+                    }
+                }
+                .into(),
+            )),
+            Lexeme::Identifier(_) => Ok(Expression::Primary(
+                Primary::Variable(Parser::parse_variable(iter)?.into()).into(),
+            )),
+            
+        }
     }
 
     fn parse_statement(iter: &mut TokenIter) -> Result<Statement, ASTError> {
@@ -473,12 +541,7 @@ impl Parser {
                 let token = iter.peek()?;
                 Ok(Statement::Assignment(
                     variable,
-                    match token.token_type {
-                        Lexeme::OpenCurly => {
-                            ValueExpression::Scope(Parser::parse_scope(iter)?.into())
-                        }
-                        _ => ValueExpression::Expression(Parser::parse_expression(iter)?.into()),
-                    },
+                    Parser::parse_value_expression(iter)?.into(),
                 ))
             }
             _ => {
