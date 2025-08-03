@@ -60,8 +60,7 @@ pub enum Lexeme {
     GreaterEquals,
     NotEquals,
     Integer(String),
-    Decimal(String),
-    EOF,
+    Decimal(String)
 }
 
 #[derive(Clone)]
@@ -365,6 +364,5 @@ impl<'a> Tokenizer<'a> {
                 }
             }
         }
-        self.tokens.push(self.token(Lexeme::EOF));
     }
 }

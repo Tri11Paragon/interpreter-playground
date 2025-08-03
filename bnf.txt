@@ -1,6 +1,8 @@
 program -> (function | class)*
 
-function -> 'fun' IDENTIFIER scope 
+function -> 'fun' IDENTIFIER '(' function_args ')' scope
+
+function_args = IDENTIFIER | function_args, IDENTIFIER
 
 class -> 'class' IDENTIFIER '{' (variable_decl | function)* '}'
 
@@ -8,13 +10,13 @@ scope -> '{' (scope | statement)* '}'
 
 variable_decl -> ('const' | 'var') IDENTIFIER (';' | '=' (expression | scope | array))
 
-array -> ('[' NUMBER ']' | '{' (expression | scope)* '}')
+array -> ('[' NUMBER ']' | '[' (expression | scope)* ']')
 
 statement -> (variable_decl | control_flow | return | assignment) ';'
 
 assignment -> variable '=' (expression | scope)
 
-return -> 'return' (variable | array)
+return -> 'return' (expression | scope | array)
 
 control_flow -> "if" (expression | variable_decl | '(' variable_decl ')' all_compare expression) scope ("else" scope | EMPTY) | 
                 "while" (expression | variable_decl | '(' variable_decl ')' all_compare expression) scope | 

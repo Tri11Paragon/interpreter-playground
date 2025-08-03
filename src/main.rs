@@ -7,6 +7,49 @@ use tokenizer::Tokenizer;
 
 pub mod tokenizer;
 
+macro_rules! syntax_error {
+    ($found:expr $(,)?) => {
+        Err(ASTError::new(
+            &format!("Syntax Error. Unexpected token {:?}", $found.token_type),
+            $found,
+        ))
+    };
+    ($found:expr, $expected:literal $(,)?) => {
+        Err(ASTError::new(
+            &format!("Syntax Error. Unexpected token {:?}, {}", $found.token_type, $expected),
+            $found
+        ))
+    };
+    ($found:expr, $expected:expr $(,)?) => {
+        Err(ASTError::new(
+            &format!(
+                "Syntax Error. Unexpected token {:?}, expected {:?}",
+                $found.token_type,
+                $expected,
+            ),
+            &$found,
+        ))
+    };
+    ($found:expr, $first:expr, $($expected:expr),+ $(,)?) => {{
+        // Collect all `expected` items (including `$first`) into a vec
+        let expected_list = {
+            let mut v = Vec::new();
+            v.push(format!("{:?}", $first));
+            $( v.push(format!("{:?}", $expected)); )+
+            v.join(", ")
+        };
+
+        return Err(ASTError::new(
+            &format!(
+                "Syntax Error. Unexpected token {:?}, expected one of: {}",
+                $found.token_type,
+                expected_list,
+            ),
+            &$found,
+        ));
+    }};
+}
+
 #[derive(Debug, Clone)]
 enum CompareOps {
     Equals,
@@ -31,6 +74,7 @@ struct Program {
 #[derive(Default, Debug, Clone)]
 struct Function {
     identifier: String,
+    inputs: Vec<String>,
     scope: Box<Scope>,
 }
 
@@ -66,7 +110,12 @@ enum ValueExpression {
 #[derive(Debug, Clone)]
 enum ArrayDecl {
     Sized(u64),
-    Initialized(Vec<ValueExpression>),
+    Initialized(ArrayLiteral),
+}
+
+#[derive(Debug, Clone)]
+struct ArrayLiteral {
+    values: Vec<ValueExpression>,
 }
 
 #[derive(Debug, Clone)]
@@ -78,22 +127,17 @@ enum VariableAssignmentExpression {
 
 #[derive(Default, Debug, Clone)]
 struct VariableDecl {
+    is_const: bool,
     identifier: String,
     assigning_expression: Option<VariableAssignmentExpression>,
 }
 
 #[derive(Debug, Clone)]
-enum AssignmentImpl {
-    Expression(Box<Expression>),
-    Scope(Box<Scope>),
-}
-
-#[derive(Debug, Clone)]
 enum Statement {
-    Return(Box<Variable>),
+    Return(VariableAssignmentExpression),
     VariableDecl(Box<VariableDecl>),
     ControlFlow(Box<ControlFlow>),
-    Assignment(Variable, AssignmentImpl),
+    Assignment(Variable, ValueExpression),
 }
 
 #[derive(Debug, Clone)]
@@ -206,6 +250,15 @@ impl Display for ASTError {
     }
 }
 
+impl std::fmt::Debug for ASTError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!(
+            "Parser error occurred at {}:{}. Diagnostic returned {}",
+            self.line, self.char_in_line, &self.message
+        ))
+    }
+}
+
 impl ASTError {
     fn new(message: &str, token: &tokenizer::Token) -> Self {
         ASTError {
@@ -216,10 +269,10 @@ impl ASTError {
     }
 
     fn eof() -> Self {
-        ASTError{
+        ASTError {
             line: 0,
             char_in_line: 0,
-            message: String::from("You have hit the end of the file. Good luck with that. Please write better code n00b")
+            message: String::from("You have hit the end of the file. Good luck with that. Please write better code n00b"),
         }
     }
 }
@@ -229,7 +282,7 @@ struct TokenIter<'a> {
 }
 
 impl<'a> TokenIter<'a> {
-    fn new(vec: &'a mut Vec<tokenizer::Token>) -> Self {
+    fn new(vec: &'a mut [tokenizer::Token]) -> Self {
         TokenIter {
             iter: vec.iter().peekable(),
         }
@@ -237,6 +290,27 @@ impl<'a> TokenIter<'a> {
 
     fn has_next(&mut self) -> bool {
         self.iter.peek().is_some()
+    }
+
+    fn peek(&mut self) -> Result<&tokenizer::Token, ASTError> {
+        match self.iter.peek() {
+            Some(val) => Ok(val),
+            None => Err(ASTError::eof()),
+        }
+    }
+
+    fn forward(&mut self, amount: usize) -> Result<&tokenizer::Token, ASTError> {
+        match self.iter.clone().skip(amount).next() {
+            Some(val) => Ok(val),
+            None => Err(ASTError::eof()),
+        }
+    }
+
+    fn next(&mut self) -> Result<&tokenizer::Token, ASTError> {
+        match self.iter.next() {
+            Some(val) => Ok(val),
+            None => Err(ASTError::eof()),
+        }
     }
 
     fn consume_if(&mut self, consume: Lexeme) -> bool {
@@ -251,12 +325,12 @@ impl<'a> TokenIter<'a> {
         if let Some(value) = self.iter.peek() {
             if value.token_type == consume {
                 self.iter.next();
-                return Ok(true);
+                Ok(true)
             } else {
-                return Ok(false);
+                Ok(false)
             }
         } else {
-            return Err(ASTError::eof());
+            Err(ASTError::eof())
         }
     }
 
@@ -264,13 +338,24 @@ impl<'a> TokenIter<'a> {
         match self.iter.next() {
             Some(value) => match &value.token_type {
                 Lexeme::Identifier(name) => Ok(name.clone()),
-                _ => Err(ASTError::new(
-                    &format!("Syntax Error. Expected Identifier but found {:?}", value),
-                    value,
-                )),
+                _ => syntax_error!(value, Lexeme::Identifier(String::from("?"))),
             },
             None => Err(ASTError::eof()),
         }
+    }
+
+    fn collect_identifier(&mut self) -> Result<Vec<String>, ASTError> {
+        let mut idents = Vec::new();
+        while let Lexeme::Identifier(name) = self.peek()?.token_type.clone() {
+            idents.push(name);
+            self.next()?;
+            if let Lexeme::Comma = self.peek()?.token_type {
+                self.next()?;
+            } else {
+                break;
+            }
+        }
+        Ok(idents)
     }
 
     fn requires(&mut self, token: Lexeme) -> Result<(), ASTError> {
@@ -297,36 +382,166 @@ struct ParsedTree {
 }
 
 impl Parser {
-    fn variable_decl(iter: &mut TokenIter) -> Result<Scope, ASTError> {
+    fn parse_assignment(iter: &mut TokenIter) -> Result<VariableAssignmentExpression, ASTError> {
+        match iter.peek()?.token_type {
+            Lexeme::Identifier(_) => Ok(VariableAssignmentExpression::Expression(
+                Parser::parse_expression(iter)?.into(),
+            )),
+            Lexeme::OpenSquare => {
+                iter.next()?;
+                if let Lexeme::Integer(value) = &iter.peek()?.token_type {
+                    if iter.forward(1)?.token_type == Lexeme::CloseSquare {
+                        return Ok(VariableAssignmentExpression::ArrayDecl(
+                            ArrayDecl::Sized(value.parse().map_err(|v| {
+                                ASTError::new("Failed to parse integer", iter.peek().unwrap())
+                            })?)
+                            .into(),
+                        ));
+                    }
+                }
+                while iter.peek()?.token_type != Lexeme::CloseSquare {
+                    todo!()
+                }
+            }
+            Lexeme::OpenCurly => {
+                todo!()
+            }
+            _ => syntax_error!(iter.peek()?),
+        }
+    }
+    fn parse_variable_decl(iter: &mut TokenIter) -> Result<VariableDecl, ASTError> {
         todo!()
+    }
+
+    fn parse_variable(iter: &mut TokenIter) -> Result<Variable, ASTError> {
+        let token = iter.next()?.clone();
+        match token.token_type {
+            Lexeme::Identifier(name) => {
+                if iter.peek()?.token_type == Lexeme::Dot {
+                    iter.next()?;
+                    Ok(Variable::Variable(
+                        Variable::Identifier(name).into(),
+                        Parser::parse_variable(iter)?.into(),
+                    ))
+                } else {
+                    Ok(Variable::Identifier(name))
+                }
+            }
+            _ => syntax_error!(&token),
+        }
+    }
+
+    fn parse_expression(iter: &mut TokenIter) -> Result<Expression, ASTError> {
+        todo!()
+    }
+
+    fn parse_statement(iter: &mut TokenIter) -> Result<Statement, ASTError> {
+        let token = iter.peek()?;
+        match &token.token_type {
+            Lexeme::Keyword(keyword) => match keyword {
+                Keyword::Var | Keyword::Const => Ok(Statement::VariableDecl(
+                    Parser::parse_variable_decl(iter)?.into(),
+                )),
+                Keyword::If => {
+                    todo!()
+                }
+                Keyword::While => {
+                    todo!()
+                }
+                Keyword::For => {
+                    todo!()
+                }
+                Keyword::Return => {
+                    iter.next()?;
+                    Ok(Statement::Return(Parser::parse_assignment(iter)?))
+                }
+                _ => {
+                    syntax_error!(
+                        token,
+                        Keyword::Var,
+                        Keyword::Const,
+                        Keyword::If,
+                        Keyword::While,
+                        Keyword::For,
+                        Keyword::Return
+                    )
+                }
+            },
+            Lexeme::Identifier(_) => {
+                let variable = Parser::parse_variable(iter)?;
+                iter.requires(Lexeme::Assignment)?;
+                let token = iter.peek()?;
+                Ok(Statement::Assignment(
+                    variable,
+                    match token.token_type {
+                        Lexeme::OpenCurly => {
+                            ValueExpression::Scope(Parser::parse_scope(iter)?.into())
+                        }
+                        _ => ValueExpression::Expression(Parser::parse_expression(iter)?.into()),
+                    },
+                ))
+            }
+            _ => {
+                syntax_error!(
+                    token,
+                    "Expected variable declaration, control flow, or variable assignment."
+                )
+            }
+        }
     }
 
     fn parse_scope(iter: &mut TokenIter) -> Result<Scope, ASTError> {
-        todo!()
+        println!("Parsing scope");
+        let mut scope = Scope::default();
+        iter.requires(Lexeme::OpenCurly)?;
+
+        while !iter.loop_consume_if(Lexeme::CloseCurly)? {
+            if iter.peek()?.token_type == Lexeme::OpenCurly {
+                println!("Found subscope");
+                scope
+                    .children
+                    .push(ScopeImpl::Scope(Parser::parse_scope(iter)?.into()));
+            } else {
+                println!("found statement");
+                scope
+                    .children
+                    .push(ScopeImpl::Statement(Parser::parse_statement(iter)?.into()));
+            }
+        }
+        Ok(scope)
     }
 
-    fn parse_function(iter: &mut TokenIter) -> Result<Option<ProgramImpl>, ASTError> {
+    fn try_parse_function(iter: &mut TokenIter) -> Result<Option<ProgramImpl>, ASTError> {
         if iter.consume_if(Lexeme::Keyword(Keyword::Fun)) {
-            let mut func = Function::default();
-            func.identifier = iter.identifier()?;
-            iter.requires(Lexeme::OpenCurly)?;
-
-            func.scope = Parser::parse_scope(iter)?.into();
-
-            iter.requires(Lexeme::CloseCurly)?;
-            return Ok(Some(ProgramImpl::Function(func.into())));
+            println!("Trying to parse function");
+            let identifier = iter.identifier()?;
+            iter.requires(Lexeme::OpenParen)?;
+            let inputs = iter.collect_identifier()?;
+            iter.requires(Lexeme::CloseParen)?;
+            let scope = Parser::parse_scope(iter)?.into();
+            return Ok(Some(ProgramImpl::Function(
+                Function {
+                    identifier,
+                    inputs,
+                    scope,
+                }
+                .into(),
+            )));
         }
         Ok(None)
     }
 
-    fn parse_class(iter: &mut TokenIter) -> Result<Option<ProgramImpl>, ASTError> {
+    fn try_parse_class(iter: &mut TokenIter) -> Result<Option<ProgramImpl>, ASTError> {
         if iter.consume_if(Lexeme::Keyword(Keyword::Class)) {
-            let mut class = Class::default();
-            class.identifier = iter.identifier()?;
-            iter.requires(Lexeme::OpenCurly);
+            println!("Trying to parse class");
+            let mut class = Class {
+                identifier: iter.identifier()?,
+                ..Class::default()
+            };
+            iter.requires(Lexeme::OpenCurly)?;
 
             while !iter.loop_consume_if(Lexeme::CloseCurly)? {
-                
+                todo!()
             }
 
             return Ok(Some(ProgramImpl::Class(class.into())));
@@ -337,9 +552,16 @@ impl Parser {
     fn parse_program(iter: &mut TokenIter) -> Result<Program, ASTError> {
         let mut nodes = Program::default();
 
+        println!("Parsing program!");
+
         while iter.has_next() {
-            Parser::parse_function(iter)?.map(|v| nodes.children.push(v));
-            Parser::parse_class(iter)?.map(|v| nodes.children.push(v));
+            println!("{:?}", iter.peek()?);
+            if let Some(v) = Parser::try_parse_function(iter)? {
+                nodes.children.push(v)
+            }
+            if let Some(v) = Parser::try_parse_class(iter)? {
+                nodes.children.push(v)
+            }
         }
 
         Ok(nodes)
@@ -353,13 +575,14 @@ impl Parser {
 }
 
 fn main() {
-    let mut tokenizer = Tokenizer::new("var silly = 32;");
+    let mut tokenizer = Tokenizer::new("fun sillybilly () {a.b = 0;}");
 
     tokenizer.tokenize();
 
-    let mut parsed_tree = Parser::parse(tokenizer.tokens.to_token_iter());
-
     println!("{:?}", &mut tokenizer.tokens);
+
+    let parsed_tree = Parser::parse(tokenizer.tokens.to_token_iter());
+
     println!();
     println!(
         "{:?}",
