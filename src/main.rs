@@ -1,7 +1,7 @@
 use std::fmt::Display;
-use std::{iter::Peekable, marker::PhantomData, slice::Iter};
+use std::{iter::Peekable, slice::Iter};
 
-use crate::Primary::Expression;
+use crate::tokenizer::Lexeme::Comma;
 use tokenizer::Keyword;
 use tokenizer::Lexeme;
 use tokenizer::Tokenizer;
@@ -102,14 +102,26 @@ struct Scope {
     children: Vec<ScopeImpl>,
 }
 
-#[derive(Debug, Clone)]
-enum ValueExpression {
-    Expression(Box<Expression>),
-    Scope(Box<Scope>),
+#[derive(Default, Debug, Clone)]
+struct ClassConstruction {
+    name: String,
+    assignments: Vec<NamedAssignment>,
 }
 
 #[derive(Debug, Clone)]
-enum VariableAssignmentExpression {
+struct NamedAssignment {
+    class_member: String,
+    value: ValueExpression,
+}
+#[derive(Debug, Clone)]
+struct FunctionCall {
+    callie: Variable,
+    args: Vec<ValueExpression>,
+}
+
+#[derive(Debug, Clone)]
+enum ValueExpression {
+    ClassConstruction(Box<ClassConstruction>),
     ArrayDecl(Box<ArrayDecl>),
     Expression(Box<Expression>),
     Scope(Box<Scope>),
@@ -130,15 +142,16 @@ struct ArrayLiteral {
 struct VariableDecl {
     is_const: bool,
     identifier: String,
-    assigning_expression: Option<VariableAssignmentExpression>,
+    assigning_expression: Option<ValueExpression>,
 }
 
 #[derive(Debug, Clone)]
 enum Statement {
-    Return(VariableAssignmentExpression),
+    Return(ValueExpression),
     VariableDecl(Box<VariableDecl>),
     ControlFlow(Box<ControlFlow>),
     Assignment(Variable, ValueExpression),
+    FunctionCall(Box<FunctionCall>),
 }
 
 #[derive(Debug, Clone)]
@@ -228,11 +241,19 @@ enum Primary {
     Expression(Box<Expression>),
     Number(String),
     String(String),
+    FunctionCall(Box<FunctionCall>),
+}
+
+#[derive(Debug, Clone)]
+enum ArrayAccessor {
+    Number(String),
+    Variable(Box<Variable>),
 }
 
 #[derive(Debug, Clone)]
 enum Variable {
-    Variable(Box<Variable>, Box<Variable>),
+    ArrayAccess(ArrayAccessor),
+    MemberAccess(Box<Variable>, Box<Variable>),
     Identifier(String),
 }
 
@@ -383,17 +404,56 @@ struct ParsedTree {
 }
 
 impl Parser {
-    fn parse_assignment(iter: &mut TokenIter) -> Result<VariableAssignmentExpression, ASTError> {
+    fn parse_variable_decl(iter: &mut TokenIter) -> Result<VariableDecl, ASTError> {
+        let is_const = iter.next()?.token_type == Lexeme::Keyword(Keyword::Const);
+        let result = match iter.peek()?.token_type.clone() {
+            Lexeme::Identifier(name) => {
+                iter.next()?;
+                if iter.peek()?.token_type == Lexeme::Semicolon {
+                    iter.next()?;
+                    return Ok(VariableDecl {
+                        is_const,
+                        identifier: name,
+                        assigning_expression: None,
+                    });
+                }
+                let result = Ok(VariableDecl {
+                    is_const,
+                    identifier: name,
+                    assigning_expression: Self::parse_value_expression(iter)?.into(),
+                });
+                iter.requires(Lexeme::Semicolon)?;
+                result
+            }
+            _ => {
+                syntax_error!(&iter.peek()?, Lexeme::Identifier(String::from("?")))
+            }
+        };
+        iter.requires(Lexeme::Semicolon)?;
+        result
+    }
+
+    fn parse_named_assignment(iter: &mut TokenIter) -> Result<NamedAssignment, ASTError> {
+        let ident = iter.identifier()?;
+        iter.requires(Lexeme::Assignment)?;
+        Ok(NamedAssignment {
+            class_member: ident,
+            value: Self::parse_value_expression(iter)?,
+        })
+    }
+
+    fn parse_value_expression(iter: &mut TokenIter) -> Result<ValueExpression, ASTError> {
         match iter.peek()?.token_type {
+            Lexeme::OpenCurly => Ok(ValueExpression::Scope(Parser::parse_scope(iter)?.into())),
             Lexeme::OpenSquare => {
                 iter.next()?;
                 if let Lexeme::Integer(value) = &iter.peek()?.token_type.clone() {
                     if iter.forward(1)?.token_type == Lexeme::CloseSquare {
-                        return Ok(VariableAssignmentExpression::ArrayDecl(
+                        return Ok(ValueExpression::ArrayDecl(
                             ArrayDecl::Sized(value.parse().map_err(|_| {
                                 ASTError::new("Failed to parse integer", iter.peek().unwrap())
                             })?)
-                            .into(),
+                                .into(),
                         ));
                     }
                 }
@@ -406,45 +466,31 @@ impl Parser {
                         return syntax_error!(&iter.peek()?, Lexeme::Comma, Lexeme::CloseSquare);
                     }
                 }
-                Ok(VariableAssignmentExpression::ArrayDecl(
+                Ok(ValueExpression::ArrayDecl(
                     ArrayDecl::Initialized(arr).into(),
                 ))
             }
-            Lexeme::OpenCurly => Ok(VariableAssignmentExpression::Scope(
-                Parser::parse_scope(iter)?.into(),
-            )),
-            _ => Ok(VariableAssignmentExpression::Expression(
-                Parser::parse_expression(iter)?.into(),
-            )),
-        }
-    }
-    fn parse_variable_decl(iter: &mut TokenIter) -> Result<VariableDecl, ASTError> {
-        let is_const = iter.next()?.token_type == Lexeme::Keyword(Keyword::Const);
-        match iter.peek()?.token_type.clone() {
-            Lexeme::Identifier(name) => {
+            Lexeme::Tilde => {
                 iter.next()?;
-                if iter.peek()?.token_type == Lexeme::Semicolon {
-                    return Ok(VariableDecl {
-                        is_const,
-                        identifier: name,
-                        assigning_expression: None,
-                    });
+                let class_name = iter.identifier()?;
+                iter.requires(Lexeme::OpenCurly)?;
+                let mut assignments = Vec::new();
+                while !iter.loop_consume_if(Lexeme::CloseCurly)? {
+                    assignments.push(Self::parse_named_assignment(iter)?);
+                    if iter.peek()?.token_type == Comma {
+                        iter.next()?;
+                    } else {
+                        break;
+                    }
                 }
-                Ok(VariableDecl {
-                    is_const,
-                    identifier: name,
-                    assigning_expression: Self::parse_assignment(iter)?.into(),
-                })
+                Ok(ValueExpression::ClassConstruction(
+                    ClassConstruction {
+                        name: class_name,
+                        assignments,
+                    }
+                        .into(),
+                ))
             }
-            _ => {
-                syntax_error!(&iter.peek()?, Lexeme::Identifier(String::from("?")))
-            }
-        }
-    }
-
-    fn parse_value_expression(iter: &mut TokenIter) -> Result<ValueExpression, ASTError> {
-        match iter.peek()?.token_type {
-            Lexeme::OpenCurly => Ok(ValueExpression::Scope(Parser::parse_scope(iter)?.into())),
             _ => Ok(ValueExpression::Expression(
                 Parser::parse_expression(iter)?.into(),
             )),
@@ -454,22 +500,55 @@ impl Parser {
     fn parse_variable(iter: &mut TokenIter) -> Result<Variable, ASTError> {
         let token = iter.next()?.clone();
         match token.token_type {
-            Lexeme::Identifier(name) => {
-                if iter.peek()?.token_type == Lexeme::Dot {
+            Lexeme::Identifier(name) => match iter.peek()?.token_type {
+                Lexeme::Dot => {
                     iter.next()?;
-                    Ok(Variable::Variable(
+                    Ok(Variable::MemberAccess(
                         Variable::Identifier(name).into(),
                         Parser::parse_variable(iter)?.into(),
                     ))
-                } else {
-                    Ok(Variable::Identifier(name))
                 }
-            }
+                Lexeme::OpenSquare => {
+                    iter.next()?;
+                    if let Lexeme::Integer(val) = iter.peek()?.token_type.clone() {
+                        iter.next()?;
+                        iter.requires(Lexeme::CloseSquare)?;
+                        Ok(Variable::ArrayAccess(ArrayAccessor::Number(val)))
+                    } else {
+                        let variable = Self::parse_variable(iter)?;
+                        iter.requires(Lexeme::CloseSquare)?;
+                        Ok(Variable::ArrayAccess(ArrayAccessor::Variable(
+                            variable.into(),
+                        )))
+                    }
+                }
+                _ => Ok(Variable::Identifier(name)),
+            },
             _ => syntax_error!(&token),
         }
     }
 
-    fn parse_expression(iter: &mut TokenIter) -> Result<Expression, ASTError> {
+    fn parse_function_arguments(
+        variable: Variable,
+        iter: &mut TokenIter,
+    ) -> Result<FunctionCall, ASTError> {
+        iter.requires(Lexeme::OpenParen)?;
+        let mut args = Vec::new();
+        while !iter.loop_consume_if(Lexeme::CloseParen)? {
+            args.push(Self::parse_value_expression(iter)?);
+            if iter.peek()?.token_type == Comma {
+                iter.next()?;
+            } else {
+                break;
+            }
+        }
+        Ok(FunctionCall {
+            callie: variable,
+            args,
+        })
+    }
+
+    fn parse_primary(iter: &mut TokenIter) -> Result<Expression, ASTError> {
         match iter.peek()?.token_type.clone() {
             Lexeme::OpenParen => {
                 iter.next()?;
@@ -477,51 +556,283 @@ impl Parser {
                 iter.requires(Lexeme::CloseParen)?;
                 Ok(Expression::Primary(Primary::Expression(expr.into()).into()))
             }
-            Lexeme::Decimal(Val) | Lexeme::Integer(Val) => {
-                Ok(Expression::Primary(Primary::Number(Val).into()))
+            Lexeme::Decimal(val) | Lexeme::Integer(val) => {
+                iter.next()?;
+                Ok(Expression::Primary(Primary::Number(val).into()))
             }
-            Lexeme::Keyword(keyword) => Ok(Expression::Primary(
-                match keyword {
-                    Keyword::True => Primary::True,
-                    Keyword::False => Primary::False,
-                    Keyword::Nil => Primary::Nil,
-                    _ => {
-                        return syntax_error!(
-                            &iter.peek()?,
-                            Lexeme::Keyword(Keyword::True),
-                            Lexeme::Keyword(Keyword::False),
-                            Lexeme::Keyword(Keyword::Nil)
-                        )
+            Lexeme::DoubleQuotes(v) => {
+                iter.next()?;
+                Ok(Expression::Primary(Primary::String(v).into()))
+            }
+            Lexeme::SingleQuotes(c) => {
+                iter.next()?;
+                Ok(Expression::Primary(Primary::String(String::from(c)).into()))
+            }
+            Lexeme::Keyword(keyword) => {
+                iter.next()?;
+                Ok(Expression::Primary(
+                    match keyword {
+                        Keyword::True => Primary::True,
+                        Keyword::False => Primary::False,
+                        Keyword::Nil => Primary::Nil,
+                        _ => {
+                            return syntax_error!(
+                                &iter.peek()?,
+                                Lexeme::Keyword(Keyword::True),
+                                Lexeme::Keyword(Keyword::False),
+                                Lexeme::Keyword(Keyword::Nil)
+                            )
+                        }
                     }
+                        .into(),
+                ))
+            }
+            Lexeme::Identifier(_) => {
+                let variable = Parser::parse_variable(iter)?;
+                if iter.peek()?.token_type == Lexeme::OpenParen {
+                    Ok(Expression::Primary(
+                        Primary::FunctionCall(
+                            Self::parse_function_arguments(variable, iter)?.into(),
+                        )
+                            .into(),
+                    ))
+                } else {
+                    Ok(Expression::Primary(
+                        Primary::Variable(variable.into()).into(),
+                    ))
                 }
-                .into(),
-            )),
-            Lexeme::Identifier(_) => Ok(Expression::Primary(
-                Primary::Variable(Parser::parse_variable(iter)?.into()).into(),
-            )),
-            
+            }
+            _ => syntax_error!(
+                &iter.peek()?,
+                Lexeme::OpenParen,
+                Lexeme::Decimal(String::from("?")),
+                Lexeme::Integer(String::from("?")),
+                Lexeme::Keyword(Keyword::True),
+                Lexeme::Keyword(Keyword::False),
+                Lexeme::Keyword(Keyword::Nil),
+                Lexeme::Identifier(String::from("?"))
+            ),
         }
     }
 
+    fn parse_unary(iter: &mut TokenIter) -> Result<Expression, ASTError> {
+        match iter.peek()?.token_type {
+            Lexeme::Exclamation => {
+                iter.next()?;
+                Ok(Expression::Unary(
+                    UnaryOp::Not,
+                    Parser::parse_unary(iter)?.into(),
+                ))
+            }
+            Lexeme::Minus => {
+                iter.next()?;
+                Ok(Expression::Unary(
+                    UnaryOp::Negate,
+                    Parser::parse_unary(iter)?.into(),
+                ))
+            }
+            _ => Parser::parse_primary(iter),
+        }
+    }
+
+    fn parse_factor(iter: &mut TokenIter) -> Result<Expression, ASTError> {
+        let lhs = Self::parse_unary(iter)?;
+        let op_type = match iter.peek()?.token_type {
+            Lexeme::Slash => {
+                iter.next()?;
+                match iter.peek()?.token_type {
+                    Lexeme::Equals => {
+                        iter.next()?;
+                        BinaryOp::DivEquals
+                    }
+                    _ => BinaryOp::Div,
+                }
+            }
+            Lexeme::Star => {
+                iter.next()?;
+                match iter.peek()?.token_type {
+                    Lexeme::Equals => {
+                        iter.next()?;
+                        BinaryOp::MulEquals
+                    }
+                    _ => BinaryOp::Mul,
+                }
+            }
+            _ => return Ok(lhs),
+        };
+        Ok(Expression::BinaryOp(
+            lhs.into(),
+            op_type,
+            Self::parse_factor(iter)?.into(),
+        ))
+    }
+
+    fn parse_term(iter: &mut TokenIter) -> Result<Expression, ASTError> {
+        let lhs = Self::parse_factor(iter)?;
+        let op_type = match iter.peek()?.token_type {
+            Lexeme::Plus => {
+                iter.next()?;
+                match iter.peek()?.token_type {
+                    Lexeme::Equals => {
+                        iter.next()?;
+                        BinaryOp::AddEquals
+                    }
+                    _ => BinaryOp::Add,
+                }
+            }
+            Lexeme::Minus => {
+                iter.next()?;
+                match iter.peek()?.token_type {
+                    Lexeme::Equals => {
+                        iter.next()?;
+                        BinaryOp::SubEquals
+                    }
+                    _ => BinaryOp::Sub,
+                }
+            }
+            _ => return Ok(lhs),
+        };
+        Ok(Expression::BinaryOp(
+            lhs.into(),
+            op_type,
+            Self::parse_term(iter)?.into(),
+        ))
+    }
+
+    fn parse_comparison(iter: &mut TokenIter) -> Result<Expression, ASTError> {
+        let lhs = Self::parse_term(iter)?;
+        let op = match iter.peek()?.token_type {
+            Lexeme::Less => {
+                iter.next()?;
+                CompareOps::Less
+            }
+            Lexeme::LessEquals => {
+                iter.next()?;
+                CompareOps::LessEquals
+            }
+            Lexeme::Greater => {
+                iter.next()?;
+                CompareOps::Greater
+            }
+            Lexeme::GreaterEquals => {
+                iter.next()?;
+                CompareOps::GreaterEquals
+            }
+            _ => return Ok(lhs),
+        };
+        Ok(Expression::Comparison(
+            lhs.into(),
+            op,
+            Self::parse_comparison(iter)?.into(),
+        ))
+    }
+
+    fn parse_expression(iter: &mut TokenIter) -> Result<Expression, ASTError> {
+        let lhs = Self::parse_comparison(iter)?;
+        let op = match iter.peek()?.token_type {
+            Lexeme::Equals => {
+                iter.next()?;
+                CompareOps::Equals
+            }
+            Lexeme::NotEquals => {
+                iter.next()?;
+                CompareOps::NotEquals
+            }
+            _ => return Ok(lhs),
+        };
+        Ok(Expression::Comparison(
+            lhs.into(),
+            op,
+            Self::parse_expression(iter)?.into(),
+        ))
+    }
+
+    fn parse_if(iter: &mut TokenIter) -> Result<ControlFlowIf, ASTError> {
+        iter.requires(Lexeme::OpenParen)?;
+        let condition = match iter.peek()?.token_type.clone() {
+            Lexeme::Keyword(keyword) => {
+                match keyword {
+                    Keyword::Var | Keyword::Class => {
+                        iter.next()?;
+                        ControlFlowConditionImpl::VariableDecl(Self::parse_variable_decl(iter)?.into())
+                    }
+                    _ => return syntax_error!(iter.peek()?, "Expected variable decl")
+                }
+            }
+            Lexeme::OpenParen => {
+                iter.next()?;
+                let variable_decl = Self::parse_variable_decl(iter)?;
+                iter.requires(Lexeme::CloseParen)?;
+                let token = iter.next()?;
+                let compare = match token.token_type {
+                    Lexeme::Equals => {
+                        CompareOps::Equals
+                    }
+                    Lexeme::NotEquals => {
+                        CompareOps::NotEquals
+                    }
+                    Lexeme::Greater => {
+                        CompareOps::Greater
+                    }
+                    Lexeme::GreaterEquals => {
+                        CompareOps::GreaterEquals
+                    }
+                    Lexeme::Less => {
+                        CompareOps::Less
+                    }
+                    Lexeme::LessEquals => {
+                        CompareOps::LessEquals
+                    }
+                    _ => return syntax_error!(token)
+                };
+                ControlFlowConditionImpl::VariableDeclCompare(variable_decl.into(), compare, Self::parse_expression(iter)?.into())
+            }
+            _ => {
+                ControlFlowConditionImpl::Expression(Self::parse_expression(iter)?.into())
+            }
+        };
+        iter.requires(Lexeme::CloseParen)?;
+        todo!()
+    }
+
+    fn parse_while(iter: &mut TokenIter) -> Result<ControlFlowWhile, ASTError> {
+        todo!()
+    }
+
+    fn parse_for(iter: &mut TokenIter) -> Result<ControlFlowFor, ASTError> {
+        todo!()
+    }
+
     fn parse_statement(iter: &mut TokenIter) -> Result<Statement, ASTError> {
-        let token = iter.peek()?;
-        match &token.token_type {
+        let token = iter.peek()?.clone();
+        match token.token_type.clone() {
             Lexeme::Keyword(keyword) => match keyword {
                 Keyword::Var | Keyword::Const => Ok(Statement::VariableDecl(
                     Parser::parse_variable_decl(iter)?.into(),
                 )),
                 Keyword::If => {
-                    todo!()
+                    iter.next()?;
+                    Ok(Statement::ControlFlow(
+                        ControlFlow::If(Self::parse_if(iter)?.into()).into(),
+                    ))
                 }
                 Keyword::While => {
-                    todo!()
+                    iter.next()?;
+                    Ok(Statement::ControlFlow(
+                        ControlFlow::While(Self::parse_while(iter)?.into()).into(),
+                    ))
                 }
                 Keyword::For => {
-                    todo!()
+                    iter.next()?;
+                    Ok(Statement::ControlFlow(
+                        ControlFlow::For(Self::parse_for(iter)?.into()).into(),
+                    ))
                 }
                 Keyword::Return => {
                     iter.next()?;
-                    Ok(Statement::Return(Parser::parse_assignment(iter)?))
+                    let result = Ok(Statement::Return(Parser::parse_value_expression(iter)?));
+                    iter.requires(Lexeme::Semicolon)?;
+                    result
                 }
                 _ => {
                     syntax_error!(
@@ -537,17 +848,31 @@ impl Parser {
             },
             Lexeme::Identifier(_) => {
                 let variable = Parser::parse_variable(iter)?;
-                iter.requires(Lexeme::Assignment)?;
-                let token = iter.peek()?;
-                Ok(Statement::Assignment(
-                    variable,
-                    Parser::parse_value_expression(iter)?.into(),
-                ))
+
+                match iter.peek()?.token_type {
+                    Lexeme::Assignment => {
+                        iter.next()?;
+                        let result = Ok(Statement::Assignment(
+                            variable,
+                            Parser::parse_value_expression(iter)?,
+                        ));
+                        iter.requires(Lexeme::Semicolon)?;
+                        result
+                    }
+                    Lexeme::OpenParen => {
+                        let result = Ok(Statement::FunctionCall(
+                            Self::parse_function_arguments(variable, iter)?.into(),
+                        ));
+                        iter.requires(Lexeme::Semicolon)?;
+                        result
+                    }
+                    _ => syntax_error!(iter.peek()?, "Expected function arguments."),
+                }
             }
             _ => {
                 syntax_error!(
-                    token,
-                    "Expected variable declaration, control flow, or variable assignment."
+                    &token,
+                    "Expected variable declaration, control flow, function call, or variable assignment."
                 )
             }
         }
@@ -588,7 +913,7 @@ impl Parser {
                     inputs,
                     scope,
                 }
-                .into(),
+                    .into(),
             )));
         }
         Ok(None)
