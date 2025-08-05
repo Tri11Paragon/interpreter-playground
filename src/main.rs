@@ -1,302 +1,19 @@
 use std::fmt::Display;
 use std::{iter::Peekable, slice::Iter};
 
-use crate::tokenizer::Lexeme::Comma;
 use tokenizer::Keyword;
 use tokenizer::Lexeme;
 use tokenizer::Tokenizer;
 
+use ast_defs::*;
+
+pub mod ast_defs;
 pub mod tokenizer;
-
-macro_rules! syntax_error {
-    ($found:expr $(,)?) => {{
-        Err(ASTError::new(
-            &format!("Syntax Error. Unexpected token {:?}", $found.token_type),
-            $found,
-        ))
-    }};
-    ($found:expr, $expected:literal $(,)?) => {{
-        Err(ASTError::new(
-            &format!("Syntax Error. Unexpected token {:?}, {}", $found.token_type, $expected),
-            $found
-        ))
-    }};
-    ($found:expr, $expected:expr $(,)?) => {{
-        Err(ASTError::new(
-            &format!(
-                "Syntax Error. Unexpected token {:?}, expected {:?}",
-                $found.token_type,
-                $expected,
-            ),
-            &$found,
-        ))
-    }};
-    ($found:expr, $first:expr, $($expected:expr),+ $(,)?) => {{
-        // Collect all `expected` items (including `$first`) into a vec
-        let expected_list = {
-            let mut v = Vec::new();
-            v.push(format!("{:?}", $first));
-            $( v.push(format!("{:?}", $expected)); )+
-            v.join(", ")
-        };
-
-        Err(ASTError::new(
-            &format!(
-                "Syntax Error. Unexpected token {:?}, expected one of: {}",
-                $found.token_type,
-                expected_list,
-            ),
-            &$found,
-        ))
-    }};
-}
-
-#[derive(Debug, Clone)]
-enum CompareOps {
-    Equals,
-    NotEquals,
-    Greater,
-    GreaterEquals,
-    Less,
-    LessEquals,
-}
-
-#[derive(Debug, Clone)]
-enum ProgramImpl {
-    Class(Box<Class>),
-    Function(Box<Function>),
-}
-
-#[derive(Default, Debug, Clone)]
-struct Program {
-    children: Vec<ProgramImpl>,
-}
-
-#[derive(Default, Debug, Clone)]
-struct Function {
-    identifier: String,
-    inputs: Vec<String>,
-    scope: Box<Scope>,
-}
-
-#[derive(Debug, Clone)]
-enum ClassInternals {
-    VariableDecl(Box<VariableDecl>),
-    Function(Box<Function>),
-}
-
-#[derive(Default, Debug, Clone)]
-struct Class {
-    identifier: String,
-    children: Vec<ClassInternals>,
-}
-
-#[derive(Debug, Clone)]
-enum ScopeImpl {
-    Statement(Box<Statement>),
-    Scope(Box<Scope>),
-}
-
-#[derive(Default, Debug, Clone)]
-struct Scope {
-    children: Vec<ScopeImpl>,
-}
-
-#[derive(Default, Debug, Clone)]
-struct ClassConstruction {
-    name: String,
-    assignments: Vec<NamedAssignment>,
-}
-
-#[derive(Debug, Clone)]
-struct NamedAssignment {
-    class_member: String,
-    value: ValueExpression,
-}
-#[derive(Debug, Clone)]
-struct FunctionCall {
-    callie: Variable,
-    args: Vec<ValueExpression>,
-}
-
-#[derive(Debug, Clone)]
-enum ValueExpression {
-    ClassConstruction(Box<ClassConstruction>),
-    ArrayDecl(Box<ArrayDecl>),
-    Expression(Box<Expression>),
-    Scope(Box<Scope>),
-}
-
-#[derive(Debug, Clone)]
-enum ArrayDecl {
-    Sized(u64),
-    Initialized(ArrayLiteral),
-}
-
-#[derive(Default, Debug, Clone)]
-struct ArrayLiteral {
-    values: Vec<ValueExpression>,
-}
-
-#[derive(Default, Debug, Clone)]
-struct VariableDecl {
-    is_const: bool,
-    identifier: String,
-    assigning_expression: Option<ValueExpression>,
-}
-
-#[derive(Debug, Clone)]
-enum Statement {
-    Return(ValueExpression),
-    VariableDecl(Box<VariableDecl>),
-    ControlFlow(Box<ControlFlow>),
-    Assignment(Variable, ValueExpression),
-    FunctionCall(Box<FunctionCall>),
-}
-
-#[derive(Debug, Clone)]
-enum ControlFlowConditionImpl {
-    Expression(Box<Expression>),
-    VariableDecl(Box<VariableDecl>),
-    VariableDeclCompare(Box<VariableDecl>, CompareOps, Box<Expression>),
-}
-
-#[derive(Debug, Clone)]
-enum ControlFlow {
-    If(Box<ControlFlowIf>),
-    While(Box<ControlFlowWhile>),
-    For(Box<ControlFlowFor>),
-}
-
-#[derive(Debug, Clone)]
-struct ControlFlowIf {
-    condition: ControlFlowConditionImpl,
-    if_true: Box<Scope>,
-    if_false: Option<Box<Scope>>,
-}
-
-#[derive(Debug, Clone)]
-struct ControlFlowWhile {
-    condition: ControlFlowConditionImpl,
-    scope: Box<Scope>,
-}
-
-#[derive(Debug, Clone)]
-struct ControlFlowFor {
-    expression: Box<ForExpression>,
-    scope: Box<Scope>,
-}
-
-#[derive(Debug, Clone)]
-enum ForInitImpl {
-    VariableDecl(Box<VariableDecl>),
-    ForInit(Box<VariableDecl>, Box<ForInitImpl>),
-}
-
-#[derive(Debug, Clone)]
-enum ForIncrementImpl {
-    Expression(Box<Expression>),
-    ForIncrement(Box<Expression>, Box<ForIncrementImpl>),
-}
-
-#[derive(Debug, Clone)]
-struct ForExpression {
-    init: Option<ForInitImpl>,
-    compare_expression: Box<Expression>,
-    increment_expression: Option<ForIncrementImpl>,
-}
-
-#[derive(Debug, Clone)]
-enum BinaryOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    AddEquals,
-    SubEquals,
-    MulEquals,
-    DivEquals,
-}
-
-#[derive(Debug, Clone)]
-enum Expression {
-    Primary(Box<Primary>),
-    Unary(UnaryOp, Box<Expression>),
-    Comparison(Box<Expression>, CompareOps, Box<Expression>),
-    BinaryOp(Box<Expression>, BinaryOp, Box<Expression>),
-}
-
-#[derive(Debug, Clone)]
-enum UnaryOp {
-    Not,
-    Negate,
-}
-
-#[derive(Debug, Clone)]
-enum Primary {
-    Variable(Box<Variable>),
-    True,
-    False,
-    Nil,
-    Expression(Box<Expression>),
-    Number(String),
-    String(String),
-    FunctionCall(Box<FunctionCall>),
-}
-
-#[derive(Debug, Clone)]
-enum ArrayAccessor {
-    Number(String),
-    Variable(Box<Variable>),
-}
-
-#[derive(Debug, Clone)]
-enum Variable {
-    ArrayAccess(ArrayAccessor),
-    MemberAccess(Box<Variable>, Box<Variable>),
-    Identifier(String),
-}
 
 struct ASTError {
     line: u64,
     char_in_line: u64,
     message: String,
-}
-
-impl Display for ASTError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!(
-            "Parser error occurred at {}:{}. Diagnostic returned {}",
-            self.line, self.char_in_line, &self.message
-        ))
-    }
-}
-
-impl std::fmt::Debug for ASTError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!(
-            "Parser error occurred at {}:{}. Diagnostic returned {}",
-            self.line, self.char_in_line, &self.message
-        ))
-    }
-}
-
-impl ASTError {
-    fn new(message: &str, token: &tokenizer::Token) -> Self {
-        ASTError {
-            line: token.line,
-            char_in_line: token.character_in_line,
-            message: message.to_owned(),
-        }
-    }
-
-    fn eof() -> Self {
-        ASTError {
-            line: 0,
-            char_in_line: 0,
-            message: String::from("You have hit the end of the file. Good luck with that. Please write better code n00b"),
-        }
-    }
 }
 
 struct TokenIter<'a> {
@@ -406,11 +123,10 @@ struct ParsedTree {
 impl Parser {
     fn parse_variable_decl(iter: &mut TokenIter) -> Result<VariableDecl, ASTError> {
         let is_const = iter.next()?.token_type == Lexeme::Keyword(Keyword::Const);
-        let result = match iter.peek()?.token_type.clone() {
+        match iter.peek()?.token_type.clone() {
             Lexeme::Identifier(name) => {
                 iter.next()?;
-                if iter.peek()?.token_type == Lexeme::Semicolon {
-                    iter.next()?;
+                if iter.next()?.token_type == Lexeme::Semicolon {
                     return Ok(VariableDecl {
                         is_const,
                         identifier: name,
@@ -428,9 +144,7 @@ impl Parser {
             _ => {
                 syntax_error!(&iter.peek()?, Lexeme::Identifier(String::from("?")))
             }
-        };
-        iter.requires(Lexeme::Semicolon)?;
-        result
+        }
     }
 
     fn parse_named_assignment(iter: &mut TokenIter) -> Result<NamedAssignment, ASTError> {
@@ -453,7 +167,7 @@ impl Parser {
                             ArrayDecl::Sized(value.parse().map_err(|_| {
                                 ASTError::new("Failed to parse integer", iter.peek().unwrap())
                             })?)
-                                .into(),
+                            .into(),
                         ));
                     }
                 }
@@ -477,7 +191,7 @@ impl Parser {
                 let mut assignments = Vec::new();
                 while !iter.loop_consume_if(Lexeme::CloseCurly)? {
                     assignments.push(Self::parse_named_assignment(iter)?);
-                    if iter.peek()?.token_type == Comma {
+                    if iter.peek()?.token_type == Lexeme::Comma {
                         iter.next()?;
                     } else {
                         break;
@@ -488,7 +202,7 @@ impl Parser {
                         name: class_name,
                         assignments,
                     }
-                        .into(),
+                    .into(),
                 ))
             }
             _ => Ok(ValueExpression::Expression(
@@ -536,7 +250,7 @@ impl Parser {
         let mut args = Vec::new();
         while !iter.loop_consume_if(Lexeme::CloseParen)? {
             args.push(Self::parse_value_expression(iter)?);
-            if iter.peek()?.token_type == Comma {
+            if iter.peek()?.token_type == Lexeme::Comma {
                 iter.next()?;
             } else {
                 break;
@@ -584,7 +298,7 @@ impl Parser {
                             )
                         }
                     }
-                        .into(),
+                    .into(),
                 ))
             }
             Lexeme::Identifier(_) => {
@@ -594,7 +308,7 @@ impl Parser {
                         Primary::FunctionCall(
                             Self::parse_function_arguments(variable, iter)?.into(),
                         )
-                            .into(),
+                        .into(),
                     ))
                 } else {
                     Ok(Expression::Primary(
@@ -747,60 +461,130 @@ impl Parser {
         ))
     }
 
-    fn parse_if(iter: &mut TokenIter) -> Result<ControlFlowIf, ASTError> {
-        iter.requires(Lexeme::OpenParen)?;
-        let condition = match iter.peek()?.token_type.clone() {
-            Lexeme::Keyword(keyword) => {
-                match keyword {
-                    Keyword::Var | Keyword::Class => {
-                        iter.next()?;
-                        ControlFlowConditionImpl::VariableDecl(Self::parse_variable_decl(iter)?.into())
-                    }
-                    _ => return syntax_error!(iter.peek()?, "Expected variable decl")
+    fn parse_control_flow_conditional(
+        iter: &mut TokenIter,
+    ) -> Result<ControlFlowConditionImpl, ASTError> {
+        Ok(match iter.peek()?.token_type.clone() {
+            Lexeme::Keyword(keyword) => match keyword {
+                Keyword::Var | Keyword::Class => {
+                    iter.next()?;
+                    ControlFlowConditionImpl::VariableDecl(Self::parse_variable_decl(iter)?.into())
                 }
-            }
+                _ => return syntax_error!(iter.peek()?, "Expected variable decl"),
+            },
             Lexeme::OpenParen => {
                 iter.next()?;
                 let variable_decl = Self::parse_variable_decl(iter)?;
                 iter.requires(Lexeme::CloseParen)?;
                 let token = iter.next()?;
                 let compare = match token.token_type {
-                    Lexeme::Equals => {
-                        CompareOps::Equals
-                    }
-                    Lexeme::NotEquals => {
-                        CompareOps::NotEquals
-                    }
-                    Lexeme::Greater => {
-                        CompareOps::Greater
-                    }
-                    Lexeme::GreaterEquals => {
-                        CompareOps::GreaterEquals
-                    }
-                    Lexeme::Less => {
-                        CompareOps::Less
-                    }
-                    Lexeme::LessEquals => {
-                        CompareOps::LessEquals
-                    }
-                    _ => return syntax_error!(token)
+                    Lexeme::Equals => CompareOps::Equals,
+                    Lexeme::NotEquals => CompareOps::NotEquals,
+                    Lexeme::Greater => CompareOps::Greater,
+                    Lexeme::GreaterEquals => CompareOps::GreaterEquals,
+                    Lexeme::Less => CompareOps::Less,
+                    Lexeme::LessEquals => CompareOps::LessEquals,
+                    _ => return syntax_error!(token),
                 };
-                ControlFlowConditionImpl::VariableDeclCompare(variable_decl.into(), compare, Self::parse_expression(iter)?.into())
+                ControlFlowConditionImpl::VariableDeclCompare(
+                    variable_decl.into(),
+                    compare,
+                    Self::parse_expression(iter)?.into(),
+                )
             }
-            _ => {
-                ControlFlowConditionImpl::Expression(Self::parse_expression(iter)?.into())
-            }
-        };
+            _ => ControlFlowConditionImpl::Expression(Self::parse_expression(iter)?.into()),
+        })
+    }
+
+    fn parse_if(iter: &mut TokenIter) -> Result<ControlFlowIf, ASTError> {
+        iter.requires(Lexeme::OpenParen)?;
+        let condition = Self::parse_control_flow_conditional(iter)?;
         iter.requires(Lexeme::CloseParen)?;
-        todo!()
+        let true_scope = Self::parse_scope(iter)?;
+        if iter.peek()?.token_type == Lexeme::Keyword(Keyword::Else) {
+            let false_scope = Self::parse_scope(iter)?;
+            Ok(ControlFlowIf {
+                condition,
+                if_true: true_scope.into(),
+                if_false: Some(false_scope.into()),
+            })
+        } else {
+            Ok(ControlFlowIf {
+                condition,
+                if_true: true_scope.into(),
+                if_false: None,
+            })
+        }
     }
 
     fn parse_while(iter: &mut TokenIter) -> Result<ControlFlowWhile, ASTError> {
-        todo!()
+        iter.requires(Lexeme::OpenParen)?;
+        let condition = Self::parse_control_flow_conditional(iter)?;
+        iter.requires(Lexeme::CloseParen)?;
+        let scope = Self::parse_scope(iter)?;
+        Ok(ControlFlowWhile {
+            condition,
+            scope: scope.into(),
+        })
+    }
+
+    fn parse_for_expression(iter: &mut TokenIter) -> Result<Option<ForInternalImpl>, ASTError> {
+        let mut for_init = Option::<ForInternalImpl>::None;
+        loop {
+            match iter.peek()?.token_type {
+                Lexeme::Semicolon | Lexeme::CloseParen => {
+                    iter.next()?;
+                    break;
+                }
+                _ => {
+                    let expression = Self::parse_expression(iter)?;
+                    match for_init {
+                        Some(val) => {
+                            for_init =
+                                Some(ForInternalImpl::ForInternal(expression.into(), val.into()));
+                        }
+                        None => {
+                            for_init = Some(ForInternalImpl::Expression(expression.into()));
+                        }
+                    }
+                    if iter.peek()?.token_type == Lexeme::Comma {
+                        iter.next()?;
+                    }
+                }
+            }
+        }
+        Ok(for_init)
     }
 
     fn parse_for(iter: &mut TokenIter) -> Result<ControlFlowFor, ASTError> {
-        todo!()
+        iter.requires(Lexeme::OpenParen)?;
+        let mut for_init = Option::<ForInitImpl>::None;
+        while !iter.loop_consume_if(Lexeme::Semicolon)? {
+            let variable_decl = Self::parse_variable_decl(iter)?;
+            match for_init {
+                Some(val) => {
+                    for_init = Some(ForInitImpl::ForInit(variable_decl.into(), val.into()));
+                }
+                None => {
+                    for_init = Some(ForInitImpl::VariableDecl(variable_decl.into()));
+                }
+            }
+            if iter.peek()?.token_type == Lexeme::Comma {
+                iter.next()?;
+            }
+        }
+        let for_compare = Self::parse_for_expression(iter)?;
+        let for_increment = Self::parse_for_expression(iter)?;
+        let scope = Self::parse_scope(iter)?;
+        Ok(ControlFlowFor {
+            expression: ForExpression {
+                init: for_init,
+                compare_expression: for_compare,
+                increment_expression: for_increment,
+            }
+            .into(),
+            scope: scope.into(),
+        })
     }
 
     fn parse_statement(iter: &mut TokenIter) -> Result<Statement, ASTError> {
@@ -831,6 +615,12 @@ impl Parser {
                 Keyword::Return => {
                     iter.next()?;
                     let result = Ok(Statement::Return(Parser::parse_value_expression(iter)?));
+                    iter.requires(Lexeme::Semicolon)?;
+                    result
+                }
+                Keyword::Print => {
+                    iter.next()?;
+                    let result = Ok(Statement::Print(Parser::parse_value_expression(iter)?));
                     iter.requires(Lexeme::Semicolon)?;
                     result
                 }
@@ -899,7 +689,7 @@ impl Parser {
         Ok(scope)
     }
 
-    fn try_parse_function(iter: &mut TokenIter) -> Result<Option<ProgramImpl>, ASTError> {
+    fn try_parse_function(iter: &mut TokenIter) -> Result<Option<Function>, ASTError> {
         if iter.consume_if(Lexeme::Keyword(Keyword::Fun)) {
             println!("Trying to parse function");
             let identifier = iter.identifier()?;
@@ -907,14 +697,11 @@ impl Parser {
             let inputs = iter.collect_identifier()?;
             iter.requires(Lexeme::CloseParen)?;
             let scope = Parser::parse_scope(iter)?.into();
-            return Ok(Some(ProgramImpl::Function(
-                Function {
-                    identifier,
-                    inputs,
-                    scope,
-                }
-                    .into(),
-            )));
+            return Ok(Some(Function {
+                identifier,
+                inputs,
+                scope,
+            }));
         }
         Ok(None)
     }
@@ -922,17 +709,32 @@ impl Parser {
     fn try_parse_class(iter: &mut TokenIter) -> Result<Option<ProgramImpl>, ASTError> {
         if iter.consume_if(Lexeme::Keyword(Keyword::Class)) {
             println!("Trying to parse class");
-            let mut class = Class {
-                identifier: iter.identifier()?,
-                ..Class::default()
-            };
+            let class_name = iter.identifier()?;
             iter.requires(Lexeme::OpenCurly)?;
 
+            let mut functions = Vec::<Function>::new();
+            let mut variables = Vec::<VariableDecl>::new();
+
             while !iter.loop_consume_if(Lexeme::CloseCurly)? {
-                todo!()
+                match iter.peek()?.token_type {
+                    Lexeme::Keyword(Keyword::Fun) => {
+                        let fun = Self::try_parse_function(iter)?;
+                        functions.push(fun.unwrap());
+                    }
+                    _ => {
+                        variables.push(Self::parse_variable_decl(iter)?);
+                    }
+                }
             }
 
-            return Ok(Some(ProgramImpl::Class(class.into())));
+            return Ok(Some(ProgramImpl::Class(
+                Class {
+                    identifier: class_name,
+                    functions,
+                    variables,
+                }
+                .into(),
+            )));
         }
         Ok(None)
     }
@@ -945,7 +747,7 @@ impl Parser {
         while iter.has_next() {
             println!("{:?}", iter.peek()?);
             if let Some(v) = Parser::try_parse_function(iter)? {
-                nodes.children.push(v)
+                nodes.children.push(ProgramImpl::Function(v.into()))
             }
             if let Some(v) = Parser::try_parse_class(iter)? {
                 nodes.children.push(v)
@@ -962,6 +764,46 @@ impl Parser {
     }
 }
 
+#[test]
+fn print_tests() {
+    let code = r#"
+        class meow {
+            var silly = 0;
+            var iamavariable = {
+                var counter = 0;
+                while (counter < 10) {
+                    counter = counter + 1;
+                }
+                return counter;
+            };
+
+            fun callme(hello, there) {
+                print hello;
+                print there;
+                print iamavariable;
+            }
+        }
+
+        fun main() {
+            var wow = ~meow{silly = 50};
+            wow.callme(50, 10);
+        }
+    "#;
+    let mut tokenizer = Tokenizer::new(code);
+
+    tokenizer.tokenize();
+
+    println!("Tokens: \n{:?}", &mut tokenizer.tokens);
+
+    let parsed_tree = Parser::parse(tokenizer.tokens.token_iter());
+
+    println!();
+    println!(
+        "{:?}",
+        &mut parsed_tree.unwrap().nodes
+    );
+}
+
 fn main() {
     let mut tokenizer = Tokenizer::new("fun sillybilly () {a.b = 0;}");
 
@@ -969,7 +811,7 @@ fn main() {
 
     println!("{:?}", &mut tokenizer.tokens);
 
-    let parsed_tree = Parser::parse(tokenizer.tokens.to_token_iter());
+    let parsed_tree = Parser::parse(tokenizer.tokens.token_iter());
 
     println!();
     println!(
@@ -996,7 +838,7 @@ fn main() {
 
 trait ToTokenIter<'a> {
     type IterResult;
-    fn to_token_iter(&'a mut self) -> Self::IterResult;
+    fn token_iter(&'a mut self) -> Self::IterResult;
 }
 
 impl<'a> From<&'a mut Vec<tokenizer::Token>> for TokenIter<'a> {
@@ -1007,7 +849,7 @@ impl<'a> From<&'a mut Vec<tokenizer::Token>> for TokenIter<'a> {
 
 impl<'a> ToTokenIter<'a> for Vec<tokenizer::Token> {
     type IterResult = TokenIter<'a>;
-    fn to_token_iter(&'a mut self) -> Self::IterResult {
+    fn token_iter(&'a mut self) -> Self::IterResult {
         TokenIter::new(self)
     }
 }

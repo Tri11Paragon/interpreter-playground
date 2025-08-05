@@ -18,7 +18,7 @@ named_assignment -> IDENTIFIER '=' value_expression | named_assignment, named_as
 
 fun_call -> variable '(' value_expression* ')'
 
-statement -> (variable_decl | control_flow | return | assignment | (fun_call ';'))
+statement -> (variable_decl | control_flow | return | assignment | (fun_call ';') | 'print' value_expression ';')
 
 assignment -> variable '=' value_expression ';'
 
@@ -30,9 +30,9 @@ control_flow -> "if" (expression | variable_decl | '(' variable_decl ')' all_com
                 "while" (expression | variable_decl | '(' variable_decl ')' all_compare expression) scope | 
                 "for" for_expression scope
 
-for_expression -> (variable_decl | EMPTY) ';' for_increment ';' 
+for_expression -> (variable_decl | EMPTY) ';' for_increment ';' for_increment
 
-for_increment -> (expression | (expression ',' for_increment)*)
+for_increment -> (expression | (expression ',' for_increment)*) | EMPTY
 
 compare_equality -> ( "!=" | "==" )
 compare_relationship ->( ">" | ">=" | "<" | "<=" )
