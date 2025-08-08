@@ -1,28 +1,34 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 use std::iter::Peekable;
+use std::marker::PhantomData;
 use std::str::Chars;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Keyword {
-    Const,
-    Var,
-    If,
-    Else,
-    Fun,
-    While,
-    Print,
-    Return,
-    For,
-    Class,
-    Nil,
-    True,
-    False
+macro_rules! compare_operator {
+    ($self:ident, $single:ident, $double:ident) => {
+        if let Some(next) = $self.iter.peek() {
+            if let Some(token) = match next {
+                '=' => Some(Lexeme::$double),
+                _ => None,
+            } {
+                $self.iter.next();
+                $self.token(token);
+            } else {
+                $self.token(Lexeme::$single);
+            }
+        } else {
+            $self.token(Lexeme::$single);
+        }
+    };
+}
+
+pub trait Keyword: Debug + Clone + PartialEq + Eq {
+    fn lookup(str: &str) -> Option<Self>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Lexeme {
+pub enum Lexeme<Keywords: Keyword> {
     Identifier(String),
-    Keyword(Keyword),
+    Keyword(Keywords),
     Dot,
     Semicolon,
     SingleQuotes(char),
@@ -59,95 +65,147 @@ pub enum Lexeme {
     LessEquals,
     GreaterEquals,
     NotEquals,
+    DivEquals,
+    MulEquals,
+    PlusEquals,
+    MinusEquals,
     Integer(String),
-    Decimal(String)
+    Decimal(String),
+    Unknown
 }
 
-#[derive(Clone)]
-pub struct Token {
-    pub line: u64,
-    pub character_in_line: u64,
-    pub token_type: Lexeme,
+#[derive(Clone, PartialEq, Eq)]
+pub struct Token<Keywords: Keyword> {
+    pub start_index: u64,
+    pub end_index: u64,
+    pub token_type: Lexeme<Keywords>,
 }
 
-impl Debug for Token {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(fmt, "TokenData({:?})", self.token_type)
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TokenBuilder<Keywords> {
+    pub start_index: u64,
+    unused: PhantomData<Keywords>,
 }
 
-pub struct Tokenizer<'a> {
-    pub tokens: Vec<Token>,
-    chars: Peekable<Chars<'a>>,
-    current_line: u64,
-    current_char: u64,
-    current_string: String,
-}
-
-impl<'a> Tokenizer<'a> {
-    pub fn new(content: &'a str) -> Self {
-        return Self {
-            tokens: Vec::new(),
-            chars: content.chars().peekable(),
-            current_line: 1,
-            current_char: 0,
-            current_string: String::new(),
-        };
-    }
-
-    pub fn iter(&self) -> core::slice::Iter<Token> {
-        self.tokens.iter()
-    }
-
-    fn token(&self, token: Lexeme) -> Token {
-        Token {
-            line: self.current_line,
-            character_in_line: self.current_char,
-            token_type: token,
+impl<Keywords: Keyword> TokenBuilder<Keywords> {
+    fn new(start_index: u64) -> Self {
+        Self {
+            start_index,
+            unused: PhantomData,
         }
     }
 
+    fn finish(&self, token_type: Lexeme<Keywords>, end_index: u64) -> Token<Keywords> {
+        Token {
+            start_index: self.start_index,
+            end_index,
+            token_type,
+        }
+    }
+}
+
+impl<Keywords: Keyword> Debug for Token<Keywords> {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(fmt, "Token({:?})", self.token_type)
+    }
+}
+
+pub struct TokenizerError {
+    pub token_index: usize,
+    pub msg: String,
+}
+
+pub struct Tokenizer<'a, Keywords: Keyword> {
+    pub tokens: Vec<Token<Keywords>>,
+    iter: TokenizerStringIter<'a>,
+    current_string: String,
+    current_token: TokenBuilder<Keywords>,
+    errors: Vec<TokenizerError>,
+}
+
+struct TokenizerStringIter<'a> {
+    chars: Peekable<Chars<'a>>,
+    current_pos: u64,
+}
+
+impl<'a> TokenizerStringIter<'a> {
+    fn peek(&mut self) -> Option<char> {
+        match self.chars.peek() {
+            Some(char) => Some(*char),
+            None => None,
+        }
+    }
+
+    fn next(&mut self) -> Option<char> {
+        self.current_pos += 1;
+        self.chars.next()
+    }
+}
+
+impl<'a, Keywords: Keyword> Tokenizer<'a, Keywords> {
+    pub fn new(content: &'a str) -> Self {
+        Self {
+            tokens: Vec::new(),
+            iter: TokenizerStringIter {
+                chars: content.chars().peekable(),
+                current_pos: 0,
+            },
+            current_string: String::new(),
+            current_token: TokenBuilder::new(0),
+            errors: Vec::new(),
+        }
+    }
+
+    fn err(&mut self, token: Lexeme<Keywords>, msg: &str) {
+        self.token(token);
+        self.errors.push(TokenizerError {
+            token_index: self.tokens.len() - 1,
+            msg: String::from(msg),
+        })
+    }
+
+    fn token(&mut self, token: Lexeme<Keywords>) {
+        self.tokens
+            .push(self.current_token.finish(token, self.iter.current_pos));
+        self.current_token = TokenBuilder::new(self.iter.current_pos + 1);
+    }
+
     fn consume_identifier(&mut self) {
-        while let Some(char) = self.chars.peek() {
+        while let Some(char) = self.iter.peek() {
             match char {
                 'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {
-                    self.current_string.push(*char);
+                    self.current_string.push(char);
                 }
                 _ => {
-                    let result = match &self.current_string[..] {
-                        "const" => Some(Keyword::Const),
-                        "var" => Some(Keyword::Var),
-                        "if" => Some(Keyword::If),
-                        "else" => Some(Keyword::Else),
-                        "fun" => Some(Keyword::Fun),
-                        "while" => Some(Keyword::While),
-                        "print" => Some(Keyword::Print),
-                        "return" => Some(Keyword::Return),
-                        "for" => Some(Keyword::For),
-                        "class" => Some(Keyword::Class),
-                        "nil" => Some(Keyword::Nil),
-                        "true" => Some(Keyword::True),
-                        "false" => Some(Keyword::False),
-                        _ => None,
-                    };
+                    let result = Keywords::lookup(&self.current_string[..]);
                     match result {
-                        Some(key) => self.tokens.push(self.token(Lexeme::Keyword(key))),
-                        None => {
-                            self.tokens
-                                .push(self.token(Lexeme::Identifier(self.current_string.clone())));
-                        }
+                        Some(key) => self.token(Lexeme::Keyword(key)),
+                        None => self.token(Lexeme::Identifier(self.current_string.clone())),
                     }
                     self.current_string.clear();
                     break;
                 }
             }
-            self.chars.next();
+            self.iter.next();
+        }
+    }
+
+    fn equal_type(c: char) -> Option<Lexeme<Keywords>> {
+        match c {
+            '=' => Some(Lexeme::Equals),
+            '<' => Some(Lexeme::LessEquals),
+            '>' => Some(Lexeme::GreaterEquals),
+            '!' => Some(Lexeme::NotEquals),
+            '+' => Some(Lexeme::PlusEquals),
+            '-' => Some(Lexeme::MinusEquals),
+            '*' => Some(Lexeme::MulEquals),
+            '/' => Some(Lexeme::DivEquals),
+            _ => None,
         }
     }
 
     pub fn tokenize(&mut self) {
-        while let Some(char) = self.chars.next() {
-            self.current_char += 1;
+        while let Some(char) = self.iter.next() {
             match char {
                 'a'..='z' | 'A'..='Z' | '_' => {
                     self.current_string.push(char);
@@ -156,24 +214,20 @@ impl<'a> Tokenizer<'a> {
                 '0'..='9' => {
                     let mut number_type = false;
                     self.current_string.push(char);
-                    while let Some(char) = self.chars.peek() {
+                    while let Some(char) = self.iter.peek() {
                         match char {
                             '0'..='9' => {
-                                self.current_string.push(self.chars.next().unwrap());
+                                self.current_string.push(self.iter.next().unwrap());
                             }
                             '.' => {
-                                self.current_string.push(self.chars.next().unwrap());
+                                self.current_string.push(self.iter.next().unwrap());
                                 number_type = true;
                             }
                             _ => {
                                 if number_type {
-                                    self.tokens.push(
-                                        self.token(Lexeme::Decimal(self.current_string.clone())),
-                                    );
+                                    self.token(Lexeme::Decimal(self.current_string.clone()));
                                 } else {
-                                    self.tokens.push(
-                                        self.token(Lexeme::Integer(self.current_string.clone())),
-                                    );
+                                    self.token(Lexeme::Integer(self.current_string.clone()));
                                 }
                                 self.current_string.clear();
                                 break;
@@ -184,25 +238,24 @@ impl<'a> Tokenizer<'a> {
                 '.' => {
                     self.current_string.push(char);
 
-                    if let Some(char) = self.chars.peek() {
+                    if let Some(char) = self.iter.peek() {
                         match char {
                             '0'..='9' => {}
                             _ => {
                                 self.current_string.clear();
-                                self.tokens.push(self.token(Lexeme::Dot));
+                                self.token(Lexeme::Dot);
                                 continue;
                             }
                         }
                     }
 
-                    while let Some(char) = self.chars.peek() {
+                    while let Some(char) = self.iter.peek() {
                         match char {
                             '0'..='9' => {
-                                self.current_string.push(self.chars.next().unwrap());
+                                self.iter.next().unwrap();
                             }
                             _ => {
-                                self.tokens
-                                    .push(self.token(Lexeme::Decimal(self.current_string.clone())));
+                                self.token(Lexeme::Decimal(self.current_string.clone()));
                                 self.current_string.clear();
                                 break;
                             }
@@ -210,126 +263,81 @@ impl<'a> Tokenizer<'a> {
                     }
                 }
                 '\'' => {
-                    let char = self.chars.next().expect(&format!(
-                        "Expected character inside single quotes at '{}:{}'",
-                        self.current_line, self.current_char
-                    ));
-                    self.tokens.push(self.token(Lexeme::SingleQuotes(char)));
-                    let char = self.chars.next();
+                    let Some(char) = self.iter.next() else {
+                        self.err(
+                            Lexeme::SingleQuotes(char),
+                            "Expected character inside single quotes",
+                        );
+                        continue;
+                    };
+                    self.token(Lexeme::SingleQuotes(char));
+                    let char = self.iter.next();
                     unsafe {
                         if char.is_none() || char.unwrap_unchecked() != '\'' {
-                            panic!(
-                                "Expected ending quote for text '{:?}' at '{}:{}'",
-                                self.tokens.iter().nth_back(0).unwrap(),
-                                self.current_line,
-                                self.current_char
+                            self.err(
+                                Lexeme::SingleQuotes(char.unwrap_unchecked()),
+                                "No matching single quote found!",
                             );
                         }
                     }
                 }
                 '"' => {
-                    while let Some(char) = self.chars.peek() {
+                    while let Some(char) = self.iter.peek() {
                         match char {
                             '"' => {
-                                self.chars.next();
-                                self.tokens.push(
-                                    self.token(Lexeme::DoubleQuotes(self.current_string.clone())),
-                                );
+                                self.iter.next();
+
+                                self.token(Lexeme::DoubleQuotes(self.current_string.clone()));
                                 self.current_string.clear();
                                 break;
                             }
-                            _ => unsafe {
-                                self.current_string
-                                    .push(self.chars.next().unwrap_unchecked());
-                            },
+                            _ => {
+                                self.current_string.push(char);
+                                self.iter.next();
+                            }
                         }
                     }
                 }
                 '=' => {
-                    if let Some(next) = self.chars.peek() {
-                        if let Some(token) = match next {
-                            '=' => Some(Lexeme::Equals),
-                            '<' => Some(Lexeme::LessEquals),
-                            '>' => Some(Lexeme::GreaterEquals),
-                            '!' => Some(Lexeme::NotEquals),
-                            _ => None,
-                        } {
-                            self.tokens.push(self.token(token));
+                    if let Some(next) = self.iter.peek() {
+                        if let Some(token) = Self::equal_type(next) {
+                            self.token(token);
                         } else {
-                            self.tokens.push(self.token(Lexeme::Assignment));
+                            self.token(Lexeme::Assignment);
                         }
                     } else {
-                        self.tokens.push(self.token(Lexeme::Assignment));
+                        self.token(Lexeme::Assignment);
                     }
                 }
-                '<' => {
-                    if let Some(next) = self.chars.peek() {
-                        if let Some(token) = match next {
-                            '=' => Some(Lexeme::LessEquals),
-                            _ => None,
-                        } {
-                            self.tokens.push(self.token(token));
-                        } else {
-                            self.tokens.push(self.token(Lexeme::Less));
-                        }
-                    } else {
-                        self.tokens.push(self.token(Lexeme::Less));
-                    }
-                }
-                '>' => {
-                    if let Some(next) = self.chars.peek() {
-                        if let Some(token) = match next {
-                            '=' => Some(Lexeme::GreaterEquals),
-                            _ => None,
-                        } {
-                            self.tokens.push(self.token(token));
-                        } else {
-                            self.tokens.push(self.token(Lexeme::Greater));
-                        }
-                    } else {
-                        self.tokens.push(self.token(Lexeme::Greater));
-                    }
-                }
-                '!' => {
-                    if let Some(next) = self.chars.peek() {
-                        if let Some(token) = match next {
-                            '=' => Some(Lexeme::NotEquals),
-                            _ => None,
-                        } {
-                            self.tokens.push(self.token(token));
-                        } else {
-                            self.tokens.push(self.token(Lexeme::Exclamation));
-                        }
-                    } else {
-                        self.tokens.push(self.token(Lexeme::Exclamation));
-                    }
-                }
+                '<' => compare_operator!(self, Less, LessEquals),
+                '>' => compare_operator!(self, Greater, GreaterEquals),
+                '!' => compare_operator!(self, Exclamation, NotEquals),
                 '/' => {
-                    if let Some(next) = self.chars.peek() {
+                    if let Some(next) = self.iter.peek() {
                         match next {
                             '/' => {
-                                while let Some(char) = self.chars.peek() {
-                                    if *char == '\n' {
+                                while let Some(char) = self.iter.peek() {
+                                    if char == '\n' {
                                         break;
                                     }
-                                    self.chars.next();
+                                    self.iter.next();
                                 }
                             }
+                            '=' => {
+                                self.iter.next();
+                                self.token(Lexeme::DivEquals);
+                            }
                             _ => {
-                                self.tokens.push(self.token(Lexeme::Slash));
+                                self.token(Lexeme::Slash);
                             }
                         }
                     } else {
-                        self.tokens.push(self.token(Lexeme::Slash));
+                        self.token(Lexeme::Slash);
                     }
                 }
                 ' ' | '\r' | '\t' => {}
-                '\n' => {
-                    self.current_char = 0;
-                    self.current_line += 1;
-                }
                 _ => {
-                    self.tokens.push(match char {
+                    match char {
                         ';' => self.token(Lexeme::Semicolon),
                         '+' => self.token(Lexeme::Plus),
                         '-' => self.token(Lexeme::Minus),
@@ -355,12 +363,9 @@ impl<'a> Tokenizer<'a> {
                         ',' => self.token(Lexeme::Comma),
                         ':' => self.token(Lexeme::Colon),
                         _ => {
-                            panic!(
-                                "Unidentified character type '{char}' at '{}:{}'",
-                                self.current_line, self.current_char
-                            );
+                            self.err(Lexeme::Unknown, "Unidentified character type");
                         }
-                    });
+                    };
                 }
             }
         }

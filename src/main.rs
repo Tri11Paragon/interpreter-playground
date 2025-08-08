@@ -1,14 +1,23 @@
 use std::fmt::Display;
-use std::{iter::Peekable, slice::Iter};
 
-use tokenizer::Keyword;
-use tokenizer::Lexeme;
-use tokenizer::Tokenizer;
+use parser::tokenizer::Tokenizer;
 
-use ast_defs::*;
-
-pub mod ast_defs;
-pub mod tokenizer;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Keyword {
+    Const,
+    Var,
+    If,
+    Else,
+    Fun,
+    While,
+    Print,
+    Return,
+    For,
+    Class,
+    Nil,
+    True,
+    False
+}
 
 #[test]
 fn print_tests() {
@@ -40,11 +49,6 @@ fn print_tests() {
     tokenizer.tokenize();
 
     println!("Tokens: \n{:?}", &mut tokenizer.tokens);
-
-    let parsed_tree = Parser::parse(tokenizer.tokens.token_iter());
-
-    println!();
-    println!("{:?}", &mut parsed_tree.unwrap().nodes);
 }
 
 fn main() {
@@ -53,14 +57,6 @@ fn main() {
     tokenizer.tokenize();
 
     println!("{:?}", &mut tokenizer.tokens);
-
-    let parsed_tree = Parser::parse(tokenizer.tokens.token_iter());
-
-    println!();
-    println!(
-        "{:?}",
-        &mut parsed_tree.expect("Some kind of error happened lol").nodes
-    );
 }
 
 // fn main() {

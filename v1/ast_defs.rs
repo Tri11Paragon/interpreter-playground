@@ -1,8 +1,9 @@
-use crate::tokenizer;
-use crate::tokenizer::{Keyword, Lexeme};
 use std::fmt::Display;
 use std::iter::Peekable;
 use std::slice::Iter;
+use play::tokenizer::Keyword;
+use play::tokenizer::Lexeme;
+use play::tokenizer;
 
 #[macro_export]
 macro_rules! syntax_error {
