@@ -1,6 +1,4 @@
-use std::fmt::Display;
-
-use parser::tokenizer::Tokenizer;
+use parser::tokenizer::{PrettyPrint, Tokenizer};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Keyword {
@@ -19,9 +17,31 @@ pub enum Keyword {
     False
 }
 
+impl parser::tokenizer::Keyword for Keyword{
+    fn lookup(str: &str) -> Option<Self> {
+        match str {
+            "const" => Some(Keyword::Const),
+            "var" => Some(Keyword::Var),
+            "if" => Some(Keyword::If),
+            "else" => Some(Keyword::Else),
+            "fun" => Some(Keyword::Fun),
+            "while" => Some(Keyword::While),
+            "print" => Some(Keyword::Print),
+            "return" => Some(Keyword::Return),
+            "for" => Some(Keyword::For),
+            "class" => Some(Keyword::Class),
+            "nil" => Some(Keyword::Nil),
+            "true" => Some(Keyword::True),
+            "false" => Some(Keyword::False),
+            _ => None
+        }
+    }
+}
+
 #[test]
 fn print_tests() {
     let code = r#"
+        e ☀ silly
         class meow {
             var silly = 0;
             var iamavariable = {
@@ -44,19 +64,35 @@ fn print_tests() {
             wow.callme(50, 10);
         }
     "#;
-    let mut tokenizer = Tokenizer::new(code);
+    let mut tokenizer = Tokenizer::<Keyword>::new(code);
 
-    tokenizer.tokenize();
+    let tokens = tokenizer.tokenize();
 
-    println!("Tokens: \n{:?}", &mut tokenizer.tokens);
+    match tokens {
+        Ok(tokens) => {
+            println!("{:?}", tokens);
+        }
+        Err(errors) => {
+            errors.pretty_print(code);
+        }
+    }
 }
 
 fn main() {
-    let mut tokenizer = Tokenizer::new("fun sillybilly () {a.b = 0;}");
+    let code = "fun sillybilly () {a.b = 0;}";
+    let mut tokenizer = Tokenizer::<Keyword>::new(code);
 
-    tokenizer.tokenize();
+    let tokens = tokenizer.tokenize();
 
-    println!("{:?}", &mut tokenizer.tokens);
+    match tokens {
+        Ok(tokens) => {
+            println!("{:?}", tokens);
+        }
+        Err(errors) => {
+            errors.pretty_print(code);
+        }
+    }
+
 }
 
 // fn main() {
@@ -74,21 +110,3 @@ fn main() {
 
 //     let tokens = extract_tokens(&contents);
 // }
-
-trait ToTokenIter<'a> {
-    type IterResult;
-    fn token_iter(&'a mut self) -> Self::IterResult;
-}
-
-impl<'a> From<&'a mut Vec<tokenizer::Token>> for TokenIter<'a> {
-    fn from(value: &'a mut Vec<tokenizer::Token>) -> Self {
-        TokenIter::new(value)
-    }
-}
-
-impl<'a> ToTokenIter<'a> for Vec<tokenizer::Token> {
-    type IterResult = TokenIter<'a>;
-    fn token_iter(&'a mut self) -> Self::IterResult {
-        TokenIter::new(self)
-    }
-}
