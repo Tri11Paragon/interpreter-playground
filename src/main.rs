@@ -1,7 +1,49 @@
-use parser::tokenizer::{PrettyPrint, Tokenizer};
+use std::collections::HashMap;
+use parser::errors::{ParserError, PrettyPrint};
+use parser::tokenizer::{Lexeme, Token, Tokenizer};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Keyword {
+macro_rules! debug {
+    ($($arg:tt)*) => {
+        println!("[{}:{}] {}", file!(), line!(), format_args!($($arg)*));
+    };
+}
+
+macro_rules! define_keywords {
+    (
+        $( $Variant:ident $(=> $name:literal)? ),+ $(,)?
+    ) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum Keyword {
+            $( $Variant ),+
+        }
+
+        impl parser::tokenizer::Keyword for Keyword {
+            fn lookup(s: &str) -> Option<Self> {
+                $(
+                    define_keywords!(@arm s, $Variant $(=> $name)?);
+                )+
+                None
+            }
+        }
+    };
+
+    // Arm for entries with explicit spelling: Variant => "kw"
+    (@arm $s:ident, $Variant:ident => $name:literal) => {
+        if $s == $name {
+            return Some(Self::$Variant);
+        }
+    };
+
+    // Arm for entries without explicit spelling: Variant
+    // Compare case-insensitively with the variant name (e.g., "Return" matches "return").
+    (@arm $s:ident, $Variant:ident) => {
+        if $s.eq_ignore_ascii_case(stringify!($Variant)) {
+            return Some(Self::$Variant);
+        }
+    };
+}
+
+define_keywords! {
     Const,
     Var,
     If,
@@ -14,34 +56,89 @@ pub enum Keyword {
     Class,
     Nil,
     True,
-    False
+    False,
+    Import
 }
 
-impl parser::tokenizer::Keyword for Keyword{
-    fn lookup(str: &str) -> Option<Self> {
-        match str {
-            "const" => Some(Keyword::Const),
-            "var" => Some(Keyword::Var),
-            "if" => Some(Keyword::If),
-            "else" => Some(Keyword::Else),
-            "fun" => Some(Keyword::Fun),
-            "while" => Some(Keyword::While),
-            "print" => Some(Keyword::Print),
-            "return" => Some(Keyword::Return),
-            "for" => Some(Keyword::For),
-            "class" => Some(Keyword::Class),
-            "nil" => Some(Keyword::Nil),
-            "true" => Some(Keyword::True),
-            "false" => Some(Keyword::False),
-            _ => None
+enum ParseMapImpl<'a> {
+    Action(fn(&Vec<Token<Keyword>>) -> ()),
+    Map(&'a mut ParseMap<'a>),
+}
+
+struct ParseMap<'a> {
+    tokens: Vec<Token<Keyword>>,
+    map: HashMap<Lexeme<Keyword>, ParseMapImpl<'a>>,
+}
+
+impl<'a, 'b> ParseMap<'a> {
+    fn new(map: HashMap<Lexeme<Keyword>, ParseMapImpl<'a>>) -> Self {
+        Self {
+            tokens: Vec::new(),
+            map,
         }
+    }
+
+    fn parse(&mut self, parser: &mut Parser<'b>) {
+        if !parser.has_token() {
+            parser.errors.push(ParserError::eof(parser.file.clone()));
+            return;
+        }
+        if self.map.contains_key(&parser.peek_token().token_type) {
+            let next_action = self.map.get_mut(&parser.peek_token().token_type).expect("How did we get here?");
+            self.tokens.push(parser.next_token().clone());
+            match next_action {
+                ParseMapImpl::Action(func) => {
+                    (func)(&self.tokens);
+                }
+                ParseMapImpl::Map(map) => {
+                    map.tokens = self.tokens.clone();
+                    map.parse(parser);
+                }
+            }
+        }
+    }
+}
+
+
+struct Parser<'a> {
+    tokens: &'a Vec<Token<Keyword>>,
+    errors: Vec<parser::errors::ParserError>,
+    current_token: usize,
+    file: Option<String>
+}
+
+impl<'a> Parser<'a> {
+    fn new(tokens: &'a Vec<Token<Keyword>>, file: Option<String>) -> Self {
+        Self {
+            errors: Vec::new(),
+            tokens,
+            current_token: 0,
+            file
+        }
+    }
+
+    fn peek_token(&mut self) -> &Token<Keyword> {
+        &self.tokens[self.current_token]
+    }
+
+    fn next_token(&mut self) -> &Token<Keyword> {
+        let token = &self.tokens[self.current_token];
+        self.advance();
+        token
+    }
+
+    fn has_token(&self) -> bool {
+        self.current_token < self.tokens.len()
+    }
+
+    fn advance(&mut self) {
+        self.current_token += 1;
     }
 }
 
 #[test]
 fn print_tests() {
     let code = r#"
-        e ☀ silly
         class meow {
             var silly = 0;
             var iamavariable = {
@@ -92,7 +189,6 @@ fn main() {
             errors.pretty_print(code);
         }
     }
-
 }
 
 // fn main() {
@@ -106,7 +202,7 @@ fn main() {
 //     let file_path = &args[1];
 
 //     let contents =
-//         fs::read_to_string(&file_path).expect(&format!("Unable to read file {}!", file_path));
+//         
 
 //     let tokens = extract_tokens(&contents);
 // }

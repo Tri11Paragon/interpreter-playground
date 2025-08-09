@@ -1,6 +1,5 @@
 use crate::tokenizer::{
-    Keyword, Lexeme, PrettyPrint, Token, TokenBuilder, Tokenizer, TokenizerError,
-    TokenizerStringIter,
+    Keyword, Lexeme, Token, TokenBuilder, Tokenizer, TokenizerError, TokenizerStringIter,
 };
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
@@ -31,11 +30,17 @@ impl<Keywords: Keyword> TokenBuilder<Keywords> {
         }
     }
 
-    fn finish(&self, token_type: Lexeme<Keywords>, end_index: usize) -> Token<Keywords> {
+    fn finish(
+        &self,
+        token_type: Lexeme<Keywords>,
+        end_index: usize,
+        file: Option<String>,
+    ) -> Token<Keywords> {
         Token {
             start_index: self.start_index,
             end_index,
             token_type,
+            file,
         }
     }
 }
@@ -59,6 +64,14 @@ impl<'a> TokenizerStringIter<'a> {
 }
 
 impl<'a, Keywords: Keyword> Tokenizer<'a, Keywords> {
+    pub fn tokenize_file(file: &str) -> Result<Vec<Token<Keywords>>, Vec<TokenizerError>> {
+        let error_str = format!("Unable to read file {}!", file);
+        let data = std::fs::read_to_string(file).expect(&error_str);
+        let mut tokenizer = Tokenizer::new(&data);
+        tokenizer.file = Some(file.into());
+        tokenizer.tokenize()
+    }
+
     pub fn new(content: &'a str) -> Self {
         Self {
             tokens: Vec::new(),
@@ -69,7 +82,8 @@ impl<'a, Keywords: Keyword> Tokenizer<'a, Keywords> {
             current_string: String::new(),
             current_token: TokenBuilder::new(0),
             errors: Vec::new(),
-            last_char: '\0'
+            last_char: '\0',
+            file: None,
         }
     }
 
@@ -80,16 +94,20 @@ impl<'a, Keywords: Keyword> Tokenizer<'a, Keywords> {
             token_start_index: last.start_index,
             token_end_index: last.end_index,
             msg: String::from(msg),
+            file: self.file.clone(),
         })
     }
 
-    fn reset_token(&mut self){
+    fn reset_token(&mut self) {
         self.current_token = TokenBuilder::new(self.iter.current_pos);
     }
 
     fn token(&mut self, token: Lexeme<Keywords>) {
-        self.tokens
-            .push(self.current_token.finish(token, self.iter.current_pos));
+        self.tokens.push(self.current_token.finish(
+            token,
+            self.iter.current_pos,
+            self.file.clone(),
+        ));
         self.reset_token();
     }
 
@@ -299,89 +317,6 @@ impl<'a, Keywords: Keyword> Tokenizer<'a, Keywords> {
             Ok(self.tokens.clone())
         } else {
             Err(self.errors.clone())
-        }
-    }
-}
-
-fn can_see(c: char) -> bool {
-    !(c.is_control() || c.is_whitespace() && c != ' ')
-}
-
-fn context(str: &str, start: usize) -> &str {
-    let start = start as isize;
-    let mut amount_left = 0usize;
-    let mut amount_right = 0usize;
-
-    for c in str[start as usize..].chars() {
-        if can_see(c) {
-            amount_right += c.len_utf8();
-        } else {
-            break;
-        }
-    }
-
-    for c in str[..start as usize].chars().rev() {
-        if can_see(c) {
-            amount_left += c.len_utf8();
-        } else {
-            break;
-        }
-    }
-
-    let begin_index = core::cmp::max(start - amount_left as isize, 0) as usize;
-    let end_index = core::cmp::min(start + amount_right as isize, str.len() as isize - 1) as usize;
-
-    &str[begin_index..end_index]
-}
-
-fn count_lines(str: &str, end: usize) -> usize {
-    let mut size = 0;
-    for c in str[0..end].chars() {
-        match c {
-            '\n' => size += 1,
-            _ => continue,
-        }
-    }
-    size
-}
-
-fn count_column(str: &str, end: usize) -> usize {
-    let mut size = 0;
-    for c in str[0..end].chars().rev() {
-        match c {
-            '\n' => break,
-            _ => size += 1,
-        }
-    }
-    size
-}
-
-fn format_string(str: &str) -> String {
-    let mut ret = String::new();
-    ret.reserve(str.len());
-    for c in str.chars() {
-        if can_see(c) {
-            ret.push(c);
-        } else {
-            ret.push_str(&format!("\\u{{{:04X}}}", c as u32))
-        }
-    }
-    ret
-}
-
-impl PrettyPrint for Vec<TokenizerError> {
-    fn pretty_print(&self, str: &str) {
-        for error in self {
-            let ctx = context(str, error.token_start_index);
-            let line = count_lines(str, error.token_start_index);
-            let column = count_column(str, error.token_start_index);
-            println!(
-                "An error occurred, unrecognized symbol '{}' at {}:{}",
-                format_string(&str[error.token_start_index..error.token_end_index]),
-                line,
-                column
-            );
-            println!("  Near '{}'", format_string(ctx));
         }
     }
 }

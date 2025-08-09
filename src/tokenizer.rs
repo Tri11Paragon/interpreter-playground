@@ -1,19 +1,17 @@
 use std::fmt::{Debug};
+use std::hash::Hash;
 use std::iter::Peekable;
 use std::marker::PhantomData;
 use std::str::Chars;
+use crate::errors::TokenizerError;
 
 mod tokenizer_impl;
 
-pub trait Keyword: Debug + Clone + PartialEq + Eq {
+pub trait Keyword: Debug + Clone + PartialEq + Eq + Hash {
     fn lookup(str: &str) -> Option<Self>;
 }
 
-pub trait PrettyPrint {
-    fn pretty_print(&self, str: &str);
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Lexeme<Keywords: Keyword> {
     Identifier(String),
     Keyword(Keywords),
@@ -67,19 +65,13 @@ pub struct Token<Keywords: Keyword> {
     pub start_index: usize,
     pub end_index: usize,
     pub token_type: Lexeme<Keywords>,
+    pub file: Option<String>
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TokenBuilder<Keywords> {
     pub start_index: usize,
     unused: PhantomData<Keywords>,
-}
-
-#[derive(Debug, Clone)]
-pub struct TokenizerError {
-    pub token_start_index: usize,
-    pub token_end_index: usize,
-    pub msg: String,
 }
 
 pub struct Tokenizer<'a, Keywords: Keyword> {
@@ -89,6 +81,7 @@ pub struct Tokenizer<'a, Keywords: Keyword> {
     current_token: TokenBuilder<Keywords>,
     errors: Vec<TokenizerError>,
     last_char: char,
+    file: Option<String>
 }
 
 struct TokenizerStringIter<'a> {
