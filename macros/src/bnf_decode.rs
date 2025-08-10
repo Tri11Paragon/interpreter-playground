@@ -1,44 +1,44 @@
 use proc_macro2::Ident;
+use std::collections::HashMap;
 use syn::parse::{Parse, ParseStream};
 use syn::{LitStr, Token};
 
 #[derive(Debug)]
 pub struct Grammar {
-    pub rules: Vec<Rule>
+    pub rules: HashMap<Ident, Vec<Rule>>,
 }
 
 #[derive(Debug)]
 pub struct Rule {
-    pub identifier: Ident,
     pub productions: Vec<Production>,
 }
 
 #[derive(Debug)]
 pub struct Production {
-    pub lexemes: Vec<Lexeme>
+    pub lexemes: Vec<Lexeme>,
 }
 
 #[derive(Debug)]
 pub enum Lexeme {
     NonTerminal(Ident),
-    Terminal(String)
+    Terminal(String),
 }
 
 impl Parse for Grammar {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut rules = Vec::new();
+        let mut rules: HashMap<Ident, Vec<Rule>> = HashMap::new();
 
         while !input.is_empty() {
-            rules.push(input.parse()?);
+            let identifier: Ident = input.parse()?;
+            rules.entry(identifier).or_default().push(input.parse()?);
         }
 
-        Ok(Grammar{rules})
+        Ok(Grammar { rules })
     }
 }
 
 impl Parse for Rule {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let identifier : Ident = input.parse()?;
         input.parse::<Token![->]>()?;
 
         let mut productions = Vec::new();
@@ -50,7 +50,9 @@ impl Parse for Rule {
         }
         input.parse::<Token![;]>()?;
 
-        Ok(Rule{identifier, productions})
+        Ok(Rule {
+            productions,
+        })
     }
 }
 
@@ -62,10 +64,10 @@ impl Parse for Production {
                 let lit: LitStr = input.parse()?;
                 lexemes.push(Lexeme::Terminal(lit.value()));
             } else {
-                let ident : Ident = input.parse()?;
+                let ident: Ident = input.parse()?;
                 lexemes.push(Lexeme::NonTerminal(ident));
             }
         }
-        Ok(Production{lexemes})
+        Ok(Production { lexemes })
     }
 }
