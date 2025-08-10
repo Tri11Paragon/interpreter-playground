@@ -1,6 +1,7 @@
-use std::collections::HashMap;
 use parser::errors::{ParserError, PrettyPrint};
 use parser::tokenizer::{Lexeme, Token, Tokenizer};
+use std::collections::HashMap;
+use macros::from_bnf;
 
 macro_rules! debug {
     ($($arg:tt)*) => {
@@ -60,51 +61,67 @@ define_keywords! {
     Import
 }
 
-enum ParseMapImpl<'a> {
+from_bnf! {
+        wow -> silly | wow "+" wow;
+        silly -> "i am a silly billy" | beep;
+        beep -> "I can't believe that you made me beep";
+}
+
+enum ParseMapImpl {
     Action(fn(&Vec<Token<Keyword>>) -> ()),
-    Map(&'a mut ParseMap<'a>),
+    Map(*mut ParseMap),
 }
 
-struct ParseMap<'a> {
+struct ParseMap {
     tokens: Vec<Token<Keyword>>,
-    map: HashMap<Lexeme<Keyword>, ParseMapImpl<'a>>,
+    map: HashMap<Lexeme<Keyword>, ParseMapImpl>,
 }
 
-impl<'a, 'b> ParseMap<'a> {
-    fn new(map: HashMap<Lexeme<Keyword>, ParseMapImpl<'a>>) -> Self {
+impl ParseMap {
+    fn new() -> Self {
+        Self {
+            tokens: Vec::new(),
+            map: HashMap::new(),
+        }
+    }
+
+    fn from_map(map: HashMap<Lexeme<Keyword>, ParseMapImpl>) -> Self {
         Self {
             tokens: Vec::new(),
             map,
         }
     }
 
-    fn parse(&mut self, parser: &mut Parser<'b>) {
+    fn associate(&mut self, lexeme: Lexeme<Keyword>, result: ParseMapImpl) {
+        self.map.insert(lexeme, result);
+    }
+
+    fn parse<'b>(&mut self, parser: &mut Parser<'b>) {
         if !parser.has_token() {
             parser.errors.push(ParserError::eof(parser.file.clone()));
             return;
         }
         if self.map.contains_key(&parser.peek_token().token_type) {
-            let next_action = self.map.get_mut(&parser.peek_token().token_type).expect("How did we get here?");
+            let next_action = &self.map[&parser.peek_token().token_type];
             self.tokens.push(parser.next_token().clone());
-            match next_action {
+            match *next_action {
                 ParseMapImpl::Action(func) => {
                     (func)(&self.tokens);
                 }
-                ParseMapImpl::Map(map) => {
-                    map.tokens = self.tokens.clone();
-                    map.parse(parser);
-                }
+                ParseMapImpl::Map(map) => unsafe {
+                    (*map).tokens = self.tokens.clone();
+                    (*map).parse(parser);
+                },
             }
         }
     }
 }
 
-
 struct Parser<'a> {
     tokens: &'a Vec<Token<Keyword>>,
-    errors: Vec<parser::errors::ParserError>,
+    errors: Vec<ParserError>,
     current_token: usize,
-    file: Option<String>
+    file: Option<String>,
 }
 
 impl<'a> Parser<'a> {
@@ -113,7 +130,7 @@ impl<'a> Parser<'a> {
             errors: Vec::new(),
             tokens,
             current_token: 0,
-            file
+            file,
         }
     }
 
@@ -134,6 +151,10 @@ impl<'a> Parser<'a> {
     fn advance(&mut self) {
         self.current_token += 1;
     }
+}
+
+fn parse(content: &str){
+    
 }
 
 #[test]
@@ -202,7 +223,7 @@ fn main() {
 //     let file_path = &args[1];
 
 //     let contents =
-//         
+//
 
 //     let tokens = extract_tokens(&contents);
 // }
