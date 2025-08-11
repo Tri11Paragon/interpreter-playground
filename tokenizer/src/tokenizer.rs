@@ -39,8 +39,6 @@ pub enum Lexeme<Keywords: Keyword> {
     OpenParen,
     CloseParen,
     Colon,
-    Left,
-    Right,
     Comma,
     Slash,
     Question,

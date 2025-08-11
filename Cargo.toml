@@ -5,6 +5,7 @@ edition = "2021"
 
 [workspace]
 resolver = "3"
+members = ["macros", "tokenizer"]
 
 [dependencies]
 macros = { version = "0.1.0", path = "macros" }

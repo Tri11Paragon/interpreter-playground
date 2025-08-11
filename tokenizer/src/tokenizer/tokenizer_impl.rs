@@ -3,6 +3,7 @@ use crate::tokenizer::{
 };
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
+use crate::errors::PrettyPrint;
 
 macro_rules! compare_operator {
     ($self:ident, $single:ident, $double:ident) => {
@@ -20,6 +21,74 @@ macro_rules! compare_operator {
             $self.token(Lexeme::$single);
         }
     };
+}
+
+impl<Keywords: Keyword> Lexeme<Keywords> {
+    pub fn from(c: char) -> Option<Self> {
+        match c {
+            '.' => Some(Self::Dot),
+            ';' => Some(Self::Semicolon),
+            '-' => Some(Self::Minus),
+            '+' => Some(Self::Plus),
+            '*' => Some(Self::Star),
+            '&' => Some(Self::And),
+            '|' => Some(Self::Or),
+            '%' => Some(Self::Percent),
+            '$' => Some(Self::Dollar),
+            '@' => Some(Self::At),
+            '!' => Some(Self::Exclamation),
+            '^' => Some(Self::Caret),
+            '~' => Some(Self::Tilde),
+            '`' => Some(Self::Grave),
+            '#' => Some(Self::Pound),
+            '[' => Some(Self::OpenSquare),
+            ']' => Some(Self::CloseSquare),
+            '{' => Some(Self::OpenCurly),
+            '}' => Some(Self::CloseCurly),
+            '(' => Some(Self::OpenParen),
+            ')' => Some(Self::CloseParen),
+            ':' => Some(Self::Colon),
+            ',' => Some(Self::Comma),
+            '/' => Some(Self::Slash),
+            '?' => Some(Self::Question),
+            '=' => Some(Self::Assignment),
+            '<' => Some(Self::Less),
+            '>' => Some(Self::Greater),
+            _ => None,
+        }
+    }
+}
+
+impl<Keywords: Keyword> From<&str> for Lexeme<Keywords> {
+    fn from(value: &str) -> Self {
+        if value.is_empty() {
+            panic!("String cannot be empty! Expected a valid lexeme to convert to.");
+        }
+        if let Some(v) = Keywords::lookup(value) {
+            return Lexeme::Keyword(v);
+        }
+        if value.len() == 1 {
+            match Self::from(value.chars().next().unwrap()) {
+                Some(lexeme) => {
+                    return lexeme;
+                }
+                None => {}
+            }
+        }
+        let tokens = Tokenizer::new(value).tokenize();
+        match tokens {
+            Ok(tokens) => {
+                if tokens.len() != 1 {
+                    panic!("Tokenizer should have produced a single token!");
+                }
+                tokens.last().unwrap().token_type.clone()
+            }
+            Err(err) => {
+                err.pretty_print(value);
+                panic!("Tokenizer failed to parse tokens.");
+            }
+        }
+    }
 }
 
 impl<Keywords: Keyword> TokenBuilder<Keywords> {
@@ -233,6 +302,16 @@ impl<'a, Keywords: Keyword> Tokenizer<'a, Keywords> {
                                 self.current_string.clear();
                                 break;
                             }
+                            '\\' => {
+                                self.iter.next();
+                                self.current_string.push('\'');
+                                if let Some(char) = self.iter.peek()
+                                    && char == '"'
+                                {
+                                    self.current_string.push(char);
+                                    self.iter.next();
+                                }
+                            }
                             _ => {
                                 self.current_string.push(char);
                                 self.iter.next();
@@ -301,8 +380,6 @@ impl<'a, Keywords: Keyword> Tokenizer<'a, Keywords> {
                         '}' => self.token(Lexeme::CloseCurly),
                         '(' => self.token(Lexeme::OpenParen),
                         ')' => self.token(Lexeme::CloseParen),
-                        '<' => self.token(Lexeme::Left),
-                        '>' => self.token(Lexeme::Right),
                         '?' => self.token(Lexeme::Question),
                         ',' => self.token(Lexeme::Comma),
                         ':' => self.token(Lexeme::Colon),
