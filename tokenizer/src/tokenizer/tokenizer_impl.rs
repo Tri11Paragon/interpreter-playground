@@ -1,9 +1,9 @@
+use crate::errors::PrettyPrint;
 use crate::tokenizer::{
     Keyword, Lexeme, Token, TokenBuilder, Tokenizer, TokenizerError, TokenizerStringIter,
 };
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
-use crate::errors::PrettyPrint;
 
 macro_rules! compare_operator {
     ($self:ident, $single:ident, $double:ident) => {
@@ -67,13 +67,10 @@ impl<Keywords: Keyword> From<&str> for Lexeme<Keywords> {
         if let Some(v) = Keywords::lookup(value) {
             return Lexeme::Keyword(v);
         }
-        if value.len() == 1 {
-            match Self::from(value.chars().next().unwrap()) {
-                Some(lexeme) => {
-                    return lexeme;
-                }
-                None => {}
-            }
+        if value.len() == 1
+            && let Some(lexeme) = Self::from(value.chars().next().unwrap())
+        {
+            return lexeme;
         }
         let tokens = Tokenizer::new(value).tokenize();
         match tokens {

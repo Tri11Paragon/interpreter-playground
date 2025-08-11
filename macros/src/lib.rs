@@ -14,9 +14,9 @@ pub fn from_bnf(input: TokenStream) -> TokenStream {
     let mut enum_names = Vec::new();
 
     for (identifier, rule) in &grammar.rules {
-        let ident_str = format_ident!("Ast{}", utility::capitalise_first(&identifier));
+        let ident_str = format_ident!("Ast{}", utility::capitalise_first(identifier));
         enum_names.push(ident_str.clone());
-        let enum_data = enums::build_enum_case(&rule);
+        let enum_data = enums::build_enum_case(rule);
         parser_enums.push(quote! {
             enum #ident_str {
                 #(#enum_data),*
@@ -25,6 +25,8 @@ pub fn from_bnf(input: TokenStream) -> TokenStream {
     }
 
     let keywords = enums::build_keywords(&grammar);
+
+    let root_idents = grammar.find_roots();
 
     quote! {
 
@@ -63,6 +65,7 @@ pub fn from_bnf(input: TokenStream) -> TokenStream {
             type Token<Keywords: Keyword> = ::tokenizer::tokenizer::Token<Keywords>;
             type ParserError = ::tokenizer::errors::ParserError;
             type HashMap<K, V> = ::std::collections::HashMap<K, V>;
+            type AstKeywords = super::AstKeywords;
 
             enum ParseMapImpl<Keywords: Keyword> {
                 Action(fn(&Vec<Token<Keywords>>) -> ()),
@@ -113,6 +116,10 @@ pub fn from_bnf(input: TokenStream) -> TokenStream {
                     }
                 }
             }
+
+            static root_identifiers: HashMap<String, ParseMap<AstKeywords>> = HashMap::from([
+                #((#root_idents), ParseMap::<AstKeywords>::new()),*
+            ]);
 
             pub struct Parser<'a, Keywords: Keyword> {
                 tokens: &'a Vec<Token<Keywords>>,

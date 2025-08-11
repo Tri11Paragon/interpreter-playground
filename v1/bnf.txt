@@ -6,13 +6,13 @@ function_args = IDENTIFIER | function_args, IDENTIFIER
 
 class -> 'class' IDENTIFIER '{' (variable_decl | function)* '}'
 
-scope -> '{' (scope | statement)* '}' 
+scope -> '{' (scope | statement)* '}'
 
 variable_decl -> ('const' | 'var') IDENTIFIER (';' | '=' value_expression ';')
 
 array -> ('[' NUMBER ']' | '[' (expression | scope)* ']')
 
-class_construction -> ~IDENTIFIER '{' named_assignment* '}'
+class_construction -> '~'IDENTIFIER '{' named_assignment* '}'
 
 named_assignment -> IDENTIFIER '=' value_expression | named_assignment, named_assignment
 

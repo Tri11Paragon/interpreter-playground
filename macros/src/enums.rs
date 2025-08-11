@@ -32,7 +32,7 @@ pub fn build_enum_case(rule: &Vec<Production>) -> Vec<proc_macro2::TokenStream> 
 pub fn build_keywords(grammar: &Grammar) -> proc_macro2::TokenStream {
     let mut keywords = Vec::new();
 
-    for (_, rules) in &grammar.rules {
+    for rules in grammar.rules.values() {
         for production in rules {
             for lexeme in &production.lexemes {
                 match lexeme {
@@ -40,13 +40,13 @@ pub fn build_keywords(grammar: &Grammar) -> proc_macro2::TokenStream {
                     Lexeme::NonTerminal(_) => {}
                     Lexeme::Terminal(terminal) => {
                         if terminal.len() > 1 {
-                            let ident = syn::parse_str::<Ident>(&terminal);
+                            let ident = syn::parse_str::<Ident>(terminal);
                             match ident {
                                 Ok(ident) => {
                                     keywords.push(ident);
                                 }
                                 Err(e) => {
-                                    panic!("Unable to create keyword '{}'. Parser returned '{}'", terminal, e.to_string());
+                                    panic!("Unable to create keyword '{}'. Parser returned '{}'", terminal, e);
                                 }
                             }
                             
@@ -57,8 +57,15 @@ pub fn build_keywords(grammar: &Grammar) -> proc_macro2::TokenStream {
         } 
     }
     quote!(
+        #[derive(Debug, Clone, PartialEq, Eq, Hash)]
         enum AstKeywords {
             #(#keywords),*
+        }
+
+        impl ::tokenizer::tokenizer::Keyword for AstKeywords {
+            fn lookup(str: &str) -> Option<Self> {
+                None
+            }
         }
     )
 } 
