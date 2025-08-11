@@ -5,12 +5,7 @@ use syn::{LitStr, Token};
 
 #[derive(Debug)]
 pub struct Grammar {
-    pub rules: HashMap<Ident, Vec<Rule>>,
-}
-
-#[derive(Debug)]
-pub struct Rule {
-    pub productions: Vec<Production>,
+    pub rules: HashMap<Ident, Vec<Production>>,
 }
 
 #[derive(Debug)]
@@ -22,37 +17,26 @@ pub struct Production {
 pub enum Lexeme {
     NonTerminal(Ident),
     Terminal(String),
+    Intrinsic(Ident)
 }
 
 impl Parse for Grammar {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut rules: HashMap<Ident, Vec<Rule>> = HashMap::new();
+        let mut rules: HashMap<Ident, Vec<Production>> = HashMap::new();
 
         while !input.is_empty() {
             let identifier: Ident = input.parse()?;
-            rules.entry(identifier).or_default().push(input.parse()?);
+            input.parse::<Token![->]>()?;
+            let productions = rules.entry(identifier).or_default();
+            productions.push(input.parse()?);
+            while input.peek(Token![|]) {
+                input.parse::<Token![|]>()?;
+                productions.push(input.parse()?);
+            }
+            input.parse::<Token![;]>()?;
         }
 
         Ok(Grammar { rules })
-    }
-}
-
-impl Parse for Rule {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        input.parse::<Token![->]>()?;
-
-        let mut productions = Vec::new();
-        productions.push(input.parse()?);
-
-        while input.peek(Token![|]) {
-            input.parse::<Token![|]>()?;
-            productions.push(input.parse()?);
-        }
-        input.parse::<Token![;]>()?;
-
-        Ok(Rule {
-            productions,
-        })
     }
 }
 
@@ -64,8 +48,14 @@ impl Parse for Production {
                 let lit: LitStr = input.parse()?;
                 lexemes.push(Lexeme::Terminal(lit.value()));
             } else {
-                let ident: Ident = input.parse()?;
-                lexemes.push(Lexeme::NonTerminal(ident));
+                if input.peek(Token![$]) {
+                    input.parse::<Token![$]>()?;
+                    let ident: Ident = input.parse()?;
+                    lexemes.push(Lexeme::Intrinsic(ident));
+                } else {
+                    let ident: Ident = input.parse()?;
+                    lexemes.push(Lexeme::NonTerminal(ident));
+                }
             }
         }
         Ok(Production { lexemes })

@@ -1,6 +1,3 @@
-use parser::errors::{ParserError, PrettyPrint};
-use parser::tokenizer::{Lexeme, Token, Tokenizer};
-use std::collections::HashMap;
 use macros::from_bnf;
 
 macro_rules! debug {
@@ -9,152 +6,10 @@ macro_rules! debug {
     };
 }
 
-macro_rules! define_keywords {
-    (
-        $( $Variant:ident $(=> $name:literal)? ),+ $(,)?
-    ) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        pub enum Keyword {
-            $( $Variant ),+
-        }
-
-        impl parser::tokenizer::Keyword for Keyword {
-            fn lookup(s: &str) -> Option<Self> {
-                $(
-                    define_keywords!(@arm s, $Variant $(=> $name)?);
-                )+
-                None
-            }
-        }
-    };
-
-    // Arm for entries with explicit spelling: Variant => "kw"
-    (@arm $s:ident, $Variant:ident => $name:literal) => {
-        if $s == $name {
-            return Some(Self::$Variant);
-        }
-    };
-
-    // Arm for entries without explicit spelling: Variant
-    // Compare case-insensitively with the variant name (e.g., "Return" matches "return").
-    (@arm $s:ident, $Variant:ident) => {
-        if $s.eq_ignore_ascii_case(stringify!($Variant)) {
-            return Some(Self::$Variant);
-        }
-    };
-}
-
-define_keywords! {
-    Const,
-    Var,
-    If,
-    Else,
-    Fun,
-    While,
-    Print,
-    Return,
-    For,
-    Class,
-    Nil,
-    True,
-    False,
-    Import
-}
-
 from_bnf! {
         wow -> silly | wow "+" wow;
-        silly -> "i am a silly billy" | beep;
-        beep -> "I can't believe that you made me beep";
-}
-
-enum ParseMapImpl {
-    Action(fn(&Vec<Token<Keyword>>) -> ()),
-    Map(*mut ParseMap),
-}
-
-struct ParseMap {
-    tokens: Vec<Token<Keyword>>,
-    map: HashMap<Lexeme<Keyword>, ParseMapImpl>,
-}
-
-impl ParseMap {
-    fn new() -> Self {
-        Self {
-            tokens: Vec::new(),
-            map: HashMap::new(),
-        }
-    }
-
-    fn from_map(map: HashMap<Lexeme<Keyword>, ParseMapImpl>) -> Self {
-        Self {
-            tokens: Vec::new(),
-            map,
-        }
-    }
-
-    fn associate(&mut self, lexeme: Lexeme<Keyword>, result: ParseMapImpl) {
-        self.map.insert(lexeme, result);
-    }
-
-    fn parse<'b>(&mut self, parser: &mut Parser<'b>) {
-        if !parser.has_token() {
-            parser.errors.push(ParserError::eof(parser.file.clone()));
-            return;
-        }
-        if self.map.contains_key(&parser.peek_token().token_type) {
-            let next_action = &self.map[&parser.peek_token().token_type];
-            self.tokens.push(parser.next_token().clone());
-            match *next_action {
-                ParseMapImpl::Action(func) => {
-                    (func)(&self.tokens);
-                }
-                ParseMapImpl::Map(map) => unsafe {
-                    (*map).tokens = self.tokens.clone();
-                    (*map).parse(parser);
-                },
-            }
-        }
-    }
-}
-
-struct Parser<'a> {
-    tokens: &'a Vec<Token<Keyword>>,
-    errors: Vec<ParserError>,
-    current_token: usize,
-    file: Option<String>,
-}
-
-impl<'a> Parser<'a> {
-    fn new(tokens: &'a Vec<Token<Keyword>>, file: Option<String>) -> Self {
-        Self {
-            errors: Vec::new(),
-            tokens,
-            current_token: 0,
-            file,
-        }
-    }
-
-    fn peek_token(&mut self) -> &Token<Keyword> {
-        &self.tokens[self.current_token]
-    }
-
-    fn next_token(&mut self) -> &Token<Keyword> {
-        let token = &self.tokens[self.current_token];
-        self.advance();
-        token
-    }
-
-    fn has_token(&self) -> bool {
-        self.current_token < self.tokens.len()
-    }
-
-    fn advance(&mut self) {
-        self.current_token += 1;
-    }
-}
-
-fn parse(content: &str){
-    
+        silly -> "billy" | beep;
+        beep -> "beep";
 }
 
 #[test]
@@ -182,34 +37,10 @@ fn print_tests() {
             wow.callme(50, 10);
         }
     "#;
-    let mut tokenizer = Tokenizer::<Keyword>::new(code);
-
-    let tokens = tokenizer.tokenize();
-
-    match tokens {
-        Ok(tokens) => {
-            println!("{:?}", tokens);
-        }
-        Err(errors) => {
-            errors.pretty_print(code);
-        }
-    }
 }
 
 fn main() {
-    let code = "fun sillybilly () {a.b = 0;}";
-    let mut tokenizer = Tokenizer::<Keyword>::new(code);
 
-    let tokens = tokenizer.tokenize();
-
-    match tokens {
-        Ok(tokens) => {
-            println!("{:?}", tokens);
-        }
-        Err(errors) => {
-            errors.pretty_print(code);
-        }
-    }
 }
 
 // fn main() {

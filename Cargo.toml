@@ -3,5 +3,9 @@ name = "parser"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+resolver = "3"
+
 [dependencies]
 macros = { version = "0.1.0", path = "macros" }
+tokenizer = { version = "0.1.0", path = "tokenizer" }

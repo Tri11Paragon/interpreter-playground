@@ -1,7 +1,6 @@
-use crate::errors::{ParserError, TokenizerError};
-use crate::errors::PrettyPrint;
-use crate::tokenizer::Token;
+use super::*;
 use crate::tokenizer::Keyword;
+use crate::tokenizer::Token;
 
 impl ParserError {
     pub fn new<Keywords: Keyword>(msg: &str, token: &Token<Keywords>) -> Self {

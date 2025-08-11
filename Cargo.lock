@@ -9,6 +9,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+ "tokenizer",
 ]
 
 [[package]]
@@ -16,6 +17,7 @@ name = "parser"
 version = "0.1.0"
 dependencies = [
  "macros",
+ "tokenizer",
 ]
 
 [[package]]
@@ -46,6 +48,10 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "tokenizer"
+version = "0.1.0"
 
 [[package]]
 name = "unicode-ident"
