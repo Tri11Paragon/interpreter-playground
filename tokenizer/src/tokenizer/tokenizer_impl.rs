@@ -72,7 +72,7 @@ impl<Keywords: Keyword> From<&str> for Lexeme<Keywords> {
         {
             return lexeme;
         }
-        let tokens = Tokenizer::new(value).tokenize();
+        let tokens = Tokenizer::new(value, None).tokenize();
         match tokens {
             Ok(tokens) => {
                 if tokens.len() != 1 {
@@ -133,12 +133,12 @@ impl<'a, Keywords: Keyword> Tokenizer<'a, Keywords> {
     pub fn tokenize_file(file: &str) -> Result<Vec<Token<Keywords>>, Vec<TokenizerError>> {
         let error_str = format!("Unable to read file {}!", file);
         let data = std::fs::read_to_string(file).expect(&error_str);
-        let mut tokenizer = Tokenizer::new(&data);
+        let mut tokenizer = Tokenizer::new(&data, Some(file.into()));
         tokenizer.file = Some(file.into());
         tokenizer.tokenize()
     }
 
-    pub fn new(content: &'a str) -> Self {
+    pub fn new(content: &'a str, file: Option<String>) -> Self {
         Self {
             tokens: Vec::new(),
             iter: TokenizerStringIter {
@@ -149,7 +149,7 @@ impl<'a, Keywords: Keyword> Tokenizer<'a, Keywords> {
             current_token: TokenBuilder::new(0),
             errors: Vec::new(),
             last_char: '\0',
-            file: None,
+            file
         }
     }
 

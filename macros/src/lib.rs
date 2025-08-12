@@ -6,6 +6,12 @@ mod bnf_decode;
 mod enums;
 mod utility;
 
+fn build_maps(roots: &[String], grammar: &bnf_decode::Grammar) {
+    if roots.len() != 1 {
+        panic!("There must be exactly one root production in order to build an AST")
+    }
+}
+
 #[proc_macro]
 pub fn from_bnf(input: TokenStream) -> TokenStream {
     let grammar = parse_macro_input!(input as bnf_decode::Grammar);
@@ -60,6 +66,7 @@ pub fn from_bnf(input: TokenStream) -> TokenStream {
 
         mod parser {
             use ::tokenizer::tokenizer::Keyword;
+            use std::sync::{Arc, OnceLock};
 
             type Lexeme<Keywords: Keyword> = ::tokenizer::tokenizer::Lexeme<Keywords>;
             type Token<Keywords: Keyword> = ::tokenizer::tokenizer::Token<Keywords>;
@@ -69,25 +76,34 @@ pub fn from_bnf(input: TokenStream) -> TokenStream {
 
             enum ParseMapImpl<Keywords: Keyword> {
                 Action(fn(&Vec<Token<Keywords>>) -> ()),
-                Map(*mut ParseMap<Keywords>),
+                Map(Arc<ParseMap<Keywords>>),
+            }
+
+            impl<Keywords: Keyword> From<ParseMap<Keywords>> for ParseMapImpl<Keywords> {
+                fn from(val: ParseMap<Keywords>) -> Self {
+                    ParseMapImpl::Map(Arc::new(val))
+                }
+            }
+
+            impl<Keywords: Keyword> From<(fn(&Vec<Token<Keywords>>) -> ())> for ParseMapImpl<Keywords> {
+                fn from(val: fn(&Vec<Token<Keywords>>) -> ()) -> Self {
+                    ParseMapImpl::Action(val)
+                }
             }
 
             struct ParseMap<Keywords: Keyword> {
-                tokens: Vec<Token<Keywords>>,
                 map: HashMap<Lexeme<Keywords>, ParseMapImpl<Keywords>>,
             }
 
             impl<Keywords: Keyword> ParseMap<Keywords> {
                 pub fn new() -> Self {
                     Self {
-                        tokens: Vec::new(),
                         map: HashMap::new(),
                     }
                 }
 
                 pub fn from_map(map: HashMap<Lexeme<Keywords>, ParseMapImpl<Keywords>>) -> Self {
                     Self {
-                        tokens: Vec::new(),
                         map,
                     }
                 }
@@ -96,30 +112,36 @@ pub fn from_bnf(input: TokenStream) -> TokenStream {
                     self.map.insert(lexeme, result);
                 }
 
-                pub fn parse<'b>(&mut self, parser: &mut Parser<'b, Keywords>) {
-                    if !parser.has_token() {
-                        parser.errors.push(ParserError::eof(parser.file.clone()));
-                        return;
-                    }
-                    if self.map.contains_key(&parser.peek_token().token_type) {
-                        let next_action = &self.map[&parser.peek_token().token_type];
-                        self.tokens.push(parser.next_token().clone());
-                        match *next_action {
-                            ParseMapImpl::Action(func) => {
-                                (func)(&self.tokens);
-                            }
-                            ParseMapImpl::Map(map) => unsafe {
-                                (*map).tokens = self.tokens.clone();
-                                (*map).parse(parser);
-                            },
-                        }
-                    }
-                }
+                // pub fn parse<'b>(&mut self, parser: &mut Parser<'b, Keywords>) {
+                //     if !parser.has_token() {
+                //         parser.errors.push(ParserError::eof(parser.file.clone()));
+                //         return;
+                //     }
+                //     if self.map.contains_key(&parser.peek_token().token_type) {
+                //         let next_action = &self.map[&parser.peek_token().token_type];
+                //         self.tokens.push(parser.next_token().clone());
+                //         match *next_action {
+                //             ParseMapImpl::Action(func) => {
+                //                 (func)(&self.tokens);
+                //             }
+                //             ParseMapImpl::Map(map) => unsafe {
+                //                 let map = map.get();
+                //                 map.parse(parser);
+                //             },
+                //         }
+                //     }
+                // }
             }
 
-            static root_identifiers: HashMap<String, ParseMap<AstKeywords>> = HashMap::from([
-                #((#root_idents), ParseMap::<AstKeywords>::new()),*
-            ]);
+            static ROOT_IDENTIFIERS: OnceLock<HashMap<&'static str, ParseMap<AstKeywords>>> = OnceLock::new();
+
+            fn root_identifiers() -> &'static HashMap<&'static str, ParseMap<AstKeywords>> {
+                ROOT_IDENTIFIERS.get_or_init(|| {
+                    HashMap::from([
+                        #((#root_idents, ParseMap::<AstKeywords>::new())),*
+                    ])
+                })
+            }
 
             pub struct Parser<'a, Keywords: Keyword> {
                 tokens: &'a Vec<Token<Keywords>>,

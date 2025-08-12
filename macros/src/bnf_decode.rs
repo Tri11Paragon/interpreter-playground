@@ -10,7 +10,21 @@ pub struct Grammar {
 
 #[derive(Debug, Clone)]
 pub struct Production {
-    pub lexemes: Vec<Lexeme>,
+    pub repetitions: Vec<Repetition>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Repetition {
+    Once(Group),        // singular token (RULE)
+    ZeroOrOnce(Group),  // (RULE)?
+    AtLeastOne(Group),  // (RULE)+
+    ZeroOrMore(Group)   // (RULE)*
+}
+
+#[derive(Debug, Clone)]
+pub enum Group {
+    Single(Lexeme), // Internal Lexeme (LEX)
+    AnyOf(Vec<Repetition>) // group inside group (SILLY | (SILLY | BILLY)*)* or series of lexemes
 }
 
 #[derive(Debug, Clone)]
@@ -69,21 +83,46 @@ impl Grammar {
 
 impl Parse for Production {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut lexemes = Vec::new();
-        while !(input.peek(Token![|]) || input.peek(Token![;])) {
-            if input.peek(LitStr) {
-                let lit: LitStr = input.parse()?;
-                lexemes.push(Lexeme::Terminal(lit.value()));
-            } else if input.peek(Token![$]) {
-                input.parse::<Token![$]>()?;
-                let ident: Ident = input.parse()?;
-                lexemes.push(Lexeme::Intrinsic(ident));
-            } else {
-                let ident: Ident = input.parse()?;
-                lexemes.push(Lexeme::NonTerminal(ident));
-            }
+        let mut repetitions = Vec::new();
+        while !input.peek(Token![;]) {
+
+            // if input.peek(LitStr) {
+            //     let lit: LitStr = input.parse()?;
+            //     lexemes.push(Lexeme::Terminal(lit.value()));
+            // } else if input.peek(Token![$]) {
+            //     input.parse::<Token![$]>()?;
+            //     let ident: Ident = input.parse()?;
+            //     lexemes.push(Lexeme::Intrinsic(ident));
+            // } else {
+            //     let ident: Ident = input.parse()?;
+            //     lexemes.push(Lexeme::NonTerminal(ident));
+            // }
         }
-        Ok(Production { lexemes })
+        Ok(Production { repetitions })
+    }
+}
+
+impl Parse for Repetition {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let group: Group = input.parse()?;
+        if input.peek(Token![*]) {
+            input.parse::<Token![*]>()?;
+            Ok(Repetition::ZeroOrMore(group))
+        } else if input.peek(Token![+]) {
+            input.parse::<Token![+]>()?;
+            Ok(Repetition::AtLeastOne(group))
+        } else if input.peek(Token![?]) {
+            input.parse::<Token![?]>()?;
+            Ok(Repetition::ZeroOrOnce(group))
+        } else {
+            Ok(Repetition::Once(group))
+        }
+    }
+}
+
+impl Parse for Group {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        todo!()
     }
 }
 
