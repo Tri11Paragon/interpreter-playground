@@ -1,7 +1,7 @@
 use proc_macro2::Ident;
 use std::collections::HashMap;
 use syn::parse::{Parse, ParseStream};
-use syn::{LitStr, Token};
+use syn::{LitStr, Token, parenthesized};
 
 #[derive(Debug, Clone)]
 pub struct Grammar {
@@ -15,16 +15,22 @@ pub struct Production {
 
 #[derive(Debug, Clone)]
 pub enum Repetition {
-    Once(Group),        // singular token (RULE)
-    ZeroOrOnce(Group),  // (RULE)?
-    AtLeastOne(Group),  // (RULE)+
-    ZeroOrMore(Group)   // (RULE)*
+    Once(Group),       // singular token (RULE)
+    ZeroOrOnce(Group), // (RULE)?
+    AtLeastOne(Group), // (RULE)+
+    ZeroOrMore(Group), // (RULE)*
 }
 
 #[derive(Debug, Clone)]
 pub enum Group {
-    Single(Lexeme), // Internal Lexeme (LEX)
-    AnyOf(Vec<Repetition>) // group inside group (SILLY | (SILLY | BILLY)*)* or series of lexemes
+    Single(Lexeme),         // Internal Lexeme (LEX)
+    AnyOf(Vec<Repetition>), // group inside group (SILLY | (SILLY | BILLY)*)* or series of lexemes
+}
+
+pub enum IntrinsicType {
+    IDENTIFIER,
+    DECIMAL,
+    INTEGER,
 }
 
 #[derive(Debug, Clone)]
@@ -32,6 +38,18 @@ pub enum Lexeme {
     NonTerminal(Ident),
     Terminal(String),
     Intrinsic(Ident),
+}
+
+impl Lexeme {
+    pub fn get_intrinsic_type(ident: &Ident) -> IntrinsicType {
+        let str = ident.to_string();
+        match &str[..] {
+            "IDENTIFIER" => IntrinsicType::IDENTIFIER,
+            "DECIMAL" => IntrinsicType::DECIMAL,
+            "INTEGER" => IntrinsicType::INTEGER,
+            _ => panic!("Unrecognized Intrinsic {}", str),
+        }
+    }
 }
 
 trait Produces {
@@ -84,19 +102,8 @@ impl Grammar {
 impl Parse for Production {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut repetitions = Vec::new();
-        while !input.peek(Token![;]) {
-
-            // if input.peek(LitStr) {
-            //     let lit: LitStr = input.parse()?;
-            //     lexemes.push(Lexeme::Terminal(lit.value()));
-            // } else if input.peek(Token![$]) {
-            //     input.parse::<Token![$]>()?;
-            //     let ident: Ident = input.parse()?;
-            //     lexemes.push(Lexeme::Intrinsic(ident));
-            // } else {
-            //     let ident: Ident = input.parse()?;
-            //     lexemes.push(Lexeme::NonTerminal(ident));
-            // }
+        while !(input.peek(Token![|]) || input.peek(Token![;])) {
+            repetitions.push(input.parse()?);
         }
         Ok(Production { repetitions })
     }
@@ -122,21 +129,77 @@ impl Parse for Repetition {
 
 impl Parse for Group {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        todo!()
+        if input.peek(syn::token::Paren) {
+            let content;
+            parenthesized!(content in input);
+            let mut vec = Vec::new();
+            while !content.is_empty() {
+                vec.push(content.parse()?);
+            }
+            Ok(Group::AnyOf(vec))
+        } else {
+            Ok(Group::Single(input.parse()?))
+        }
+    }
+}
+
+impl Parse for Lexeme {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        if input.peek(LitStr) {
+            let lit: LitStr = input.parse()?;
+            Ok(Lexeme::Terminal(lit.value()))
+        } else if input.peek(Token![$]) {
+            input.parse::<Token![$]>()?;
+            let ident: Ident = input.parse()?;
+            Ok(Lexeme::Intrinsic(ident))
+        } else {
+            let ident: Ident = input.parse()?;
+            Ok(Lexeme::NonTerminal(ident))
+        }
+    }
+}
+
+impl Produces for Group {
+    fn produces(&self, ident: &Ident) -> bool {
+        match self {
+            Group::Single(lexeme) => match (lexeme) {
+                Lexeme::NonTerminal(production) => {
+                    if production == ident {
+                        return true;
+                    }
+                    false
+                }
+                Lexeme::Terminal(_) => false,
+                Lexeme::Intrinsic(_) => false,
+            },
+            Group::AnyOf(repetitions) => {
+                for repetition in repetitions {
+                    if repetition.produces(ident) {
+                        return true;
+                    }
+                }
+                false
+            }
+        }
+    }
+}
+
+impl Produces for Repetition {
+    fn produces(&self, ident: &Ident) -> bool {
+        match self {
+            Repetition::ZeroOrMore(group) => group.produces(ident),
+            Repetition::AtLeastOne(group) => group.produces(ident),
+            Repetition::Once(group) => group.produces(ident),
+            Repetition::ZeroOrOnce(group) => group.produces(ident),
+        }
     }
 }
 
 impl Produces for Production {
     fn produces(&self, ident: &Ident) -> bool {
-        for lexeme in &self.lexemes {
-            match (lexeme) {
-                Lexeme::NonTerminal(production) => {
-                    if production == ident {
-                        return true;
-                    }
-                }
-                Lexeme::Terminal(_) => {}
-                Lexeme::Intrinsic(_) => {}
+        for repetition in &self.repetitions {
+            if repetition.produces(ident) {
+                return true;
             }
         }
         false

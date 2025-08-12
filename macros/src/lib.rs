@@ -18,11 +18,12 @@ pub fn from_bnf(input: TokenStream) -> TokenStream {
 
     let mut parser_enums = Vec::new();
     let mut enum_names = Vec::new();
+    let mut extra_classes = Vec::new();
 
     for (identifier, rule) in &grammar.rules {
         let ident_str = format_ident!("Ast{}", utility::capitalise_first(identifier));
         enum_names.push(ident_str.clone());
-        let enum_data = enums::build_enum_case(rule);
+        let enum_data = enums::build_enum_cases(rule, &mut extra_classes);
         parser_enums.push(quote! {
             enum #ident_str {
                 #(#enum_data),*
@@ -35,7 +36,7 @@ pub fn from_bnf(input: TokenStream) -> TokenStream {
     let root_idents = grammar.find_roots();
 
     quote! {
-
+        #(#extra_classes)*
         #(#parser_enums)*
         enum AstVariant {
             #(#enum_names(#enum_names)),*
@@ -131,16 +132,6 @@ pub fn from_bnf(input: TokenStream) -> TokenStream {
                 //         }
                 //     }
                 // }
-            }
-
-            static ROOT_IDENTIFIERS: OnceLock<HashMap<&'static str, ParseMap<AstKeywords>>> = OnceLock::new();
-
-            fn root_identifiers() -> &'static HashMap<&'static str, ParseMap<AstKeywords>> {
-                ROOT_IDENTIFIERS.get_or_init(|| {
-                    HashMap::from([
-                        #((#root_idents, ParseMap::<AstKeywords>::new())),*
-                    ])
-                })
             }
 
             pub struct Parser<'a, Keywords: Keyword> {

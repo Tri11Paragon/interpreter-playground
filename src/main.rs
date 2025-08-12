@@ -9,7 +9,8 @@ macro_rules! debug {
 from_bnf! {
         wow -> silly | wow "+" wow;
         silly -> "billy" | beep;
-        beep -> "beep";
+        beep -> "beep" | group;
+        group -> (wow "+" beep) | silly* | (beep "-" ">" beep)*;
 }
 
 #[test]
