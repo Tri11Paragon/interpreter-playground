@@ -28,9 +28,9 @@ pub enum Group {
 }
 
 pub enum IntrinsicType {
-    IDENTIFIER,
-    DECIMAL,
-    INTEGER,
+    Identifier,
+    Decimal,
+    Integer,
 }
 
 #[derive(Debug, Clone)]
@@ -42,11 +42,11 @@ pub enum Lexeme {
 
 impl Lexeme {
     pub fn get_intrinsic_type(ident: &Ident) -> IntrinsicType {
-        let str = ident.to_string();
+        let str = ident.to_string().to_ascii_uppercase();
         match &str[..] {
-            "IDENTIFIER" => IntrinsicType::IDENTIFIER,
-            "DECIMAL" => IntrinsicType::DECIMAL,
-            "INTEGER" => IntrinsicType::INTEGER,
+            "IDENTIFIER" => IntrinsicType::Identifier,
+            "DECIMAL" => IntrinsicType::Decimal,
+            "INTEGER" => IntrinsicType::Integer,
             _ => panic!("Unrecognized Intrinsic {}", str),
         }
     }

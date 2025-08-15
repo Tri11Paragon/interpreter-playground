@@ -17,13 +17,13 @@ fn process_lexeme(lexeme: &Lexeme) -> Option<TokenStream> {
         }
         Lexeme::Terminal(_) => None,
         Lexeme::Intrinsic(ident) => match Lexeme::get_intrinsic_type(ident) {
-            IntrinsicType::IDENTIFIER => Some(quote! {
+            IntrinsicType::Identifier => Some(quote! {
                 String
             }),
-            IntrinsicType::DECIMAL => Some(quote! {
+            IntrinsicType::Decimal => Some(quote! {
                 String
             }),
-            IntrinsicType::INTEGER => Some(quote! {
+            IntrinsicType::Integer => Some(quote! {
                 String
             }),
         },
