@@ -1,4 +1,4 @@
-use macros::from_bnf;
+use macros::{build_repr_bnf};
 
 macro_rules! debug {
     ($($arg:tt)*) => {
@@ -6,7 +6,7 @@ macro_rules! debug {
     };
 }
 
-from_bnf! {
+build_repr_bnf! {
         wow -> silly | wow "+" wow;
         silly -> "billy" | beep;
         beep -> "beep" | group;

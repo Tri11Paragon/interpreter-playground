@@ -1,4 +1,6 @@
-use crate::bnf_decode::{Grammar, Group, IntrinsicType, Lexeme, Production, Repetition};
+use crate::build_repr::bnf_decode::{
+    Grammar, Group, IntrinsicType, Lexeme, Production, Repetition,
+};
 use crate::utility::capitalise_first;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote};
@@ -61,10 +63,11 @@ fn process_repetition(
 ) {
     match repetition {
         Repetition::Once(group) => match group {
-            Group::Single(lexeme) => match process_lexeme(lexeme) {
-                Some(tokens) => variants.push(tokens),
-                None => {}
-            },
+            Group::Single(lexeme) => {
+                if let Some(tokens) = process_lexeme(lexeme) {
+                    variants.push(tokens)
+                }
+            }
             Group::AnyOf(options) => {
                 let name = create_sub_repetition(options, extra_classes);
                 variants.push(quote! {#name})
