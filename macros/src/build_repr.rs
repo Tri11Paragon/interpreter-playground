@@ -2,11 +2,11 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::parse_macro_input;
 
-mod bnf_decode;
+pub mod bnf;
 mod enums;
 
 pub fn from_bnf(input: TokenStream) -> TokenStream {
-    let grammar = parse_macro_input!(input as bnf_decode::Grammar);
+    let grammar = parse_macro_input!(input as bnf::Grammar);
 
     let mut parser_enums = Vec::new();
     let mut enum_names = Vec::new();

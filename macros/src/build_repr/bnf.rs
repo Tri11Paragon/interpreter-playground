@@ -52,7 +52,7 @@ impl Lexeme {
     }
 }
 
-trait Produces {
+pub trait Produces {
     fn produces(&self, ident: &Ident) -> bool;
 }
 

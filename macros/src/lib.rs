@@ -6,6 +6,8 @@ mod utility;
 
 mod build_repr;
 
+mod build_recursive_descent;
+
 #[proc_macro]
 pub fn build_repr_bnf(input: TokenStream) -> TokenStream {
     build_repr::from_bnf(input)
@@ -13,7 +15,5 @@ pub fn build_repr_bnf(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 pub fn recursive_descent(input: TokenStream) -> TokenStream {
-    // let grammar = parse_macro_input!(input);
-    
-    todo!()
+    build_recursive_descent::build_recursive_descent(input)
 }

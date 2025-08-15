@@ -1,4 +1,4 @@
-use crate::build_repr::bnf_decode::{
+use crate::build_repr::bnf::{
     Grammar, Group, IntrinsicType, Lexeme, Production, Repetition,
 };
 use crate::utility::capitalise_first;
