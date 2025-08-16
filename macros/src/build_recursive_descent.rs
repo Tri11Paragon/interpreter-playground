@@ -1,49 +1,46 @@
-use crate::build_repr::bnf;
-use crate::build_repr::bnf::{Group, Repetition};
 use proc_macro::TokenStream;
+use std::collections::{HashMap, HashSet};
+use std::slice::Iter;
+use proc_macro2::Ident;
 use quote::quote;
 use syn::parse_macro_input;
+use crate::build_recursive_descent::basic_bnf::Lexeme;
 
-fn process_group(group: &Group) -> TokenStream {
-    match group {
-        Group::Single(single) => {
+mod basic_bnf;
 
-        }
-        Group::AnyOf(vec) => {
-            for rep in vec {
-                process_repetition(rep);
-            }
-        }
-    }
+struct ParseState {
+    grammar: basic_bnf::Grammar,
+
 }
 
-fn process_repetition(repetition: &Repetition) -> TokenStream {
-    match repetition {
-        Repetition::Once(group) => {
-            process_group(group)
+fn what(production_iters: &mut HashMap<&Ident, Vec<Iter<basic_bnf::Lexeme>>>) {
+    for (ident, productions) in production_iters {
+        let mut vec = HashMap::new();
+        for production in productions {
+            if let Some(v) = production.next() {
+                let g = vec.entry(v).or_insert(Vec::new());
+                g.push(production)
+            }
         }
-        Repetition::ZeroOrOnce(group) => {
-            process_group(group)
-        }
-        Repetition::AtLeastOne(group) => {
-            process_group(group)
-        }
-        Repetition::ZeroOrMore(group) => {
-            process_group(group)
-        }
+
     }
 }
 
 pub fn build_recursive_descent(input: TokenStream) -> TokenStream {
-    let grammar = parse_macro_input!(input as bnf::Grammar);
+    let grammar = parse_macro_input!(input as basic_bnf::Grammar);
 
-    for (ident, productions) in grammar.rules {
+    let roots = grammar.find_roots();
+
+    let mut production_iters = HashMap::new();
+    for (ident, productions) in &grammar.rules {
         for production in productions {
-            for repetition in production.repetitions {
-                process_repetition(&repetition);
-            }
+            let e = production_iters.entry(ident).or_insert(Vec::new());
+            e.push(production.lexemes.iter());
         }
     }
+
+    what(&mut production_iters);
+
 
     quote! {
         pub struct Parser<'a, Keywords: Keyword> {
