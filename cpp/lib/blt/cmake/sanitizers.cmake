@@ -1,0 +1,58 @@
+include(cmake/color.cmake)
+message("Enabling requested sanitizers for ${PROJECT_NAME}")
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # using Clang
+    if (${ENABLE_ADDRSAN} MATCHES ON)
+        message("-- Using Clang address sanitizer")
+        target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
+        target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
+    endif ()
+
+    if (${ENABLE_UBSAN} MATCHES ON)
+        message("-- Using Clang undefined behaviour sanitizer")
+        target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=undefined)
+        target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=undefined)
+    endif ()
+
+    if (${ENABLE_TSAN} MATCHES ON)
+        message("-- Using Clang thread sanitizer")
+        target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=thread)
+        target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=thread)
+    endif ()
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # using GCC
+    if (${ENABLE_ADDRSAN} MATCHES ON)
+        message("-- Using GCC address sanitizer")
+        target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
+        target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
+    endif ()
+
+    if (${ENABLE_UBSAN} MATCHES ON)
+        message("-- Using GCC undefined behaviour sanitizer")
+        target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=undefined)
+        target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=undefined)
+    endif ()
+
+    if (${ENABLE_TSAN} MATCHES ON)
+        message("-- Using GCC thread sanitizer")
+        target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=thread)
+        target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=thread)
+    endif ()
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
+    # using Intel C++
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    # using Visual Studio C++
+    if (${ENABLE_ADDRSAN} MATCHES ON)
+        message("-- Using GCC address sanitizer")
+        target_compile_options(${PROJECT_NAME} PRIVATE /fsanitize=address)
+        target_link_options(${PROJECT_NAME} PRIVATE /fsanitize=address)
+    endif ()
+
+    if (${ENABLE_UBSAN} MATCHES ON)
+        message("-- ${Red}Undefined behaviour sanitizer not supported on this platform${ColourReset}")
+    endif ()
+
+    if (${ENABLE_TSAN} MATCHES ON)
+        message("-- ${Red}Thread sanitizer not supported on this platform${ColourReset}")
+    endif ()
+endif ()

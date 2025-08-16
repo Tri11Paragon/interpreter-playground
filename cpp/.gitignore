@@ -1,0 +1,10 @@
+cmake-build*/
+build/
+out/
+./cmake-build*/
+./build/
+./out/
+*.sqlite3
+*.sqlite
+*.env
+.env

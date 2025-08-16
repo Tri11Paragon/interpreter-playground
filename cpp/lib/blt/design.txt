@@ -1,0 +1,4 @@
+Utility classes are namespaces all lower case.
+standard classes are Camel Cased.
+data structure classes are snake cased. (to conform to what most of the C libs seem to use)
+Template types should be capital snake case

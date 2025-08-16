@@ -1,0 +1,1 @@
+- tests for SVO + static_vector class. All functions but mostly worried about the algorithm functions.

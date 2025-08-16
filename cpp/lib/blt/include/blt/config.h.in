@@ -1,0 +1,13 @@
+#ifndef BLT_CONFIG_H
+#define BLT_CONFIG_H
+
+#cmakedefine ZLIB_FOUND
+#cmakedefine BLT_DISABLE_LOGGING
+#cmakedefine BLT_DISABLE_TRACE
+#cmakedefine BLT_DISABLE_DEBUG
+#cmakedefine BLT_DISABLE_INFO
+#cmakedefine BLT_DISABLE_WARN
+#cmakedefine BLT_DISABLE_ERROR
+#cmakedefine BLT_DISABLE_FATAL
+
+#endif // BLT_CONFIG_H
