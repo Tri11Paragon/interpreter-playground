@@ -7,18 +7,29 @@ use crate::errors::TokenizerError;
 
 mod tokenizer_impl;
 
-pub trait Keyword: Debug + Clone + PartialEq + Eq + Hash {
+pub trait Keyword: Debug + Clone + PartialEq + Eq + Hash + From<u64> {
     fn lookup(str: &str) -> Option<Self>;
+    
+    fn lookup_index(index: TokenIndex) -> Self;
+
+    fn index(&self) -> TokenIndex;
+}
+
+pub enum TokenIndex {
+    Token(u64),
+    Keyword(u64)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Lexeme<Keywords: Keyword> {
     Identifier(String),
+    Integer(String),
+    Decimal(String),
+    SingleQuotes(char),
+    DoubleQuotes(String),
     Keyword(Keywords),
     Dot,
     Semicolon,
-    SingleQuotes(char),
-    DoubleQuotes(String),
     Minus,
     Plus,
     Star,
@@ -53,8 +64,7 @@ pub enum Lexeme<Keywords: Keyword> {
     MulEquals,
     PlusEquals,
     MinusEquals,
-    Integer(String),
-    Decimal(String),
+
     Unknown
 }
 

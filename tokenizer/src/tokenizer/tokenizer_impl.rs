@@ -1,6 +1,7 @@
 use crate::errors::PrettyPrint;
 use crate::tokenizer::{
-    Keyword, Lexeme, Token, TokenBuilder, Tokenizer, TokenizerError, TokenizerStringIter,
+    Keyword, Lexeme, Token, TokenBuilder, TokenIndex, Tokenizer, TokenizerError,
+    TokenizerStringIter,
 };
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
@@ -55,6 +56,112 @@ impl<Keywords: Keyword> Lexeme<Keywords> {
             '<' => Some(Self::Less),
             '>' => Some(Self::Greater),
             _ => None,
+        }
+    }
+}
+
+impl<Keywords: Keyword> TryFrom<TokenIndex> for Lexeme<Keywords> {
+    type Error = ();
+    fn try_from(value: TokenIndex) -> Result<Self, Self::Error> {
+        Ok(match value {
+            TokenIndex::Token(value) => match value {
+                0 => Self::Identifier("".to_string()),
+                1 => Self::Integer("".to_string()),
+                2 => Self::Decimal("".to_string()),
+                3 => Self::SingleQuotes('\0'),
+                4 => Self::DoubleQuotes("\0".to_string()),
+                5 => Self::Dot,
+                6 => Self::Semicolon,
+                7 => Self::Minus,
+                8 => Self::Plus,
+                9 => Self::Star,
+                10 => Self::And,
+                11 => Self::Or,
+                12 => Self::Percent,
+                13 => Self::Dollar,
+                14 => Self::At,
+                15 => Self::Exclamation,
+                16 => Self::Caret,
+                17 => Self::Tilde,
+                18 => Self::Grave,
+                19 => Self::Pound,
+                20 => Self::OpenSquare,
+                21 => Self::CloseSquare,
+                22 => Self::OpenCurly,
+                23 => Self::CloseCurly,
+                24 => Self::OpenParen,
+                25 => Self::CloseParen,
+                26 => Self::Colon,
+                27 => Self::Comma,
+                28 => Self::Slash,
+                29 => Self::Question,
+                30 => Self::Assignment,
+                31 => Self::Equals,
+                32 => Self::Less,
+                33 => Self::Greater,
+                34 => Self::LessEquals,
+                35 => Self::GreaterEquals,
+                36 => Self::NotEquals,
+                37 => Self::DivEquals,
+                38 => Self::MulEquals,
+                39 => Self::PlusEquals,
+                40 => Self::MinusEquals,
+                41 => Self::Unknown,
+                _ => return Err(()),
+            },
+            TokenIndex::Keyword(value) => {
+                Lexeme::Keyword(Keywords::lookup_index(TokenIndex::Keyword(value)))
+            }
+        })
+    }
+}
+
+impl<Keywords: Keyword> From<Lexeme<Keywords>> for TokenIndex {
+    fn from(value: Lexeme<Keywords>) -> Self {
+        match value {
+            Lexeme::Identifier(_) => Self::Token(0),
+            Lexeme::Integer(_) => Self::Token(1),
+            Lexeme::Decimal(_) => Self::Token(2),
+            Lexeme::SingleQuotes(_) => Self::Token(3),
+            Lexeme::DoubleQuotes(_) => Self::Token(4),
+            Lexeme::Dot => Self::Token(5),
+            Lexeme::Semicolon => Self::Token(6),
+            Lexeme::Minus => Self::Token(7),
+            Lexeme::Plus => Self::Token(8),
+            Lexeme::Star => Self::Token(9),
+            Lexeme::And => Self::Token(10),
+            Lexeme::Or => Self::Token(11),
+            Lexeme::Percent => Self::Token(12),
+            Lexeme::Dollar => Self::Token(13),
+            Lexeme::At => Self::Token(14),
+            Lexeme::Exclamation => Self::Token(15),
+            Lexeme::Caret => Self::Token(16),
+            Lexeme::Tilde => Self::Token(17),
+            Lexeme::Grave => Self::Token(18),
+            Lexeme::Pound => Self::Token(19),
+            Lexeme::OpenSquare => Self::Token(20),
+            Lexeme::CloseSquare => Self::Token(21),
+            Lexeme::OpenCurly => Self::Token(22),
+            Lexeme::CloseCurly => Self::Token(23),
+            Lexeme::OpenParen => Self::Token(24),
+            Lexeme::CloseParen => Self::Token(25),
+            Lexeme::Colon => Self::Token(26),
+            Lexeme::Comma => Self::Token(27),
+            Lexeme::Slash => Self::Token(28),
+            Lexeme::Question => Self::Token(29),
+            Lexeme::Assignment => Self::Token(30),
+            Lexeme::Equals => Self::Token(31),
+            Lexeme::Less => Self::Token(32),
+            Lexeme::Greater => Self::Token(33),
+            Lexeme::LessEquals => Self::Token(34),
+            Lexeme::GreaterEquals => Self::Token(35),
+            Lexeme::NotEquals => Self::Token(36),
+            Lexeme::DivEquals => Self::Token(37),
+            Lexeme::MulEquals => Self::Token(38),
+            Lexeme::PlusEquals => Self::Token(39),
+            Lexeme::MinusEquals => Self::Token(40),
+            Lexeme::Unknown => Self::Token(41),
+            Lexeme::Keyword(keyword) => keyword.index(),
         }
     }
 }
@@ -149,7 +256,7 @@ impl<'a, Keywords: Keyword> Tokenizer<'a, Keywords> {
             current_token: TokenBuilder::new(0),
             errors: Vec::new(),
             last_char: '\0',
-            file
+            file,
         }
     }
 
