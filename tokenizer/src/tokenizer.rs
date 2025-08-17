@@ -7,17 +7,14 @@ use crate::errors::TokenizerError;
 
 mod tokenizer_impl;
 
-pub trait Keyword: Debug + Clone + PartialEq + Eq + Hash + From<u64> {
+pub trait Keyword: Debug + Clone + PartialEq + Eq + Hash {
     fn lookup(str: &str) -> Option<Self>;
-    
-    fn lookup_index(index: TokenIndex) -> Self;
 
-    fn index(&self) -> TokenIndex;
-}
+    fn lookup_index(index: usize) -> Self;
 
-pub enum TokenIndex {
-    Token(u64),
-    Keyword(u64)
+    fn index(&self) -> usize;
+
+    fn size() -> usize;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
